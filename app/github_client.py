@@ -175,6 +175,7 @@ class GitHubClient:
                     "content": sanitized_content,
                     "contains_redactions": contains_redactions,
                     "content_truncated": content_truncated,
+                    "source_sha": payload.get("sha"),
                 })
                 total_chars += len(sanitized_content)
 
