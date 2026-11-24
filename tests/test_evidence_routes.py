@@ -76,12 +76,12 @@ def test_evidence_registry_list_is_tenant_scoped(monkeypatch, tmp_path):
 
 
 def test_evidence_registry_requires_explicit_scope(monkeypatch, tmp_path):
+    monkeypatch.setenv("USAGE_DB_PATH", str(tmp_path / "evidence-registry.sqlite3"))
+    monkeypatch.setenv("TENANT_AUTH_PEPPER", "evidence-test-pepper-value-at-least-32-chars")
     key = create_tenant_key(
         user_id="read-only", team_id="research-team", repositories=["org/research"],
         scopes=["inference:chat"],
     )["api_key"]
-    monkeypatch.setenv("USAGE_DB_PATH", str(tmp_path / "evidence-registry.sqlite3"))
-    monkeypatch.setenv("TENANT_AUTH_PEPPER", "evidence-test-pepper-value-at-least-32-chars")
     with pytest.raises(HTTPException) as exc:
         asyncio.run(create_evidence_record(_request(), x_tenant_key=key))
     assert exc.value.status_code == 403
