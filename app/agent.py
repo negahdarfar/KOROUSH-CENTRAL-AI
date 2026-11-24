@@ -3,7 +3,6 @@ import hmac
 import json
 import re
 
-import httpx
 from .config import settings
 from .avalai import list_avalai_models
 from .model_router import rank_avalai_models, select_avalai_model
