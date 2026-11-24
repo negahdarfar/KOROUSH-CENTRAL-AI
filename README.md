@@ -52,3 +52,35 @@ The admin panel can inspect selected account models in batches of up to 25 using
 Capability labels distinguish provider metadata (verified evidence) from model-name hints (inference). Missing pricing is reported as unknown; account tier is never treated as proof that a model is free. The panel advances through the catalog in small batches so the operator controls provider load. Inspection is metadata-only and does not run paid inference benchmarks.
 
 The JSON capability gateway validates model availability against the lightweight catalog only; it does not fetch detail metadata for all account models on every request.
+
+
+## Team- and repository-aware model routing
+
+The router ranks the authenticated AvalAI catalog by explicit pricing evidence before task preferences: models whose returned pricing is explicitly zero rank first, unknown-price models rank next, and paid models rank last. Missing pricing is never labelled free. Coding repairs use the coding route; audits use the general route unless a more specific repository policy overrides it.
+
+Optional Railway variable `KOROUSH_WORKFLOW_POLICIES` accepts JSON. Resolution order is defaults → team → exact repository, with repository settings taking precedence:
+
+```json
+{
+  "defaults": {
+    "provider_order": ["avalai"],
+    "free_first": true,
+    "free_only": false,
+    "allow_unknown_cost": true,
+    "allow_paid": false,
+    "max_retries": 1,
+    "task": "general"
+  },
+  "teams": {
+    "quant": {"task": "research", "allow_unknown_cost": false},
+    "engineering": {"task": "coding"}
+  },
+  "repositories": {
+    "negahdarfar/example-private": {"task": "coding", "allow_paid": true}
+  }
+}
+```
+
+Supported task classes: `general`, `coding`, `vision`, `fast`, `reasoning`, and `research`. Invalid JSON fails closed to safe defaults. Do not enable paid models until an intentional budget and provider-side spending controls are configured.
+
+**Scope note:** the team/repository policy registry and free-first ranking are implemented for the AvalAI selection path. Cross-provider automatic failover, durable background orchestration, per-team usage accounting, and enforceable budget ledgers are not yet implemented and must not be treated as active.
