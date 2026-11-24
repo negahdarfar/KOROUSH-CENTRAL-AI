@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
 from .quota_guard import _db_path
+from .schema_registry import SchemaValidationError, validate_schema
 
 _ID = re.compile(r"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+){1,7}$")
 _KINDS = {"agent", "model", "tool", "api", "data_source", "connector"}
@@ -90,10 +91,17 @@ def _validate(manifest: dict) -> dict:
     for repo in item["repositories"]:
         if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,38}/[a-z0-9][a-z0-9._-]{0,99}", repo.lower()):
             raise ExtensionRegistryError("repositories must use owner/repository identities")
-    for field in ("input_schema", "output_schema", "pricing"):
+    for field in ("input_schema", "output_schema"):
         value = item.get(field, {})
         if not isinstance(value, dict) or len(json.dumps(value, ensure_ascii=True)) > 8000:
             raise ExtensionRegistryError(f"{field} must be a JSON object no larger than 8 KB")
+        try:
+            validate_schema(value)
+        except SchemaValidationError as exc:
+            raise ExtensionRegistryError(f"{field} is not a supported bounded JSON Schema: {exc}") from exc
+    value = item.get("pricing", {})
+    if not isinstance(value, dict) or len(json.dumps(value, ensure_ascii=True)) > 8000:
+        raise ExtensionRegistryError("pricing must be a JSON object no larger than 8 KB")
     item["status"] = item.get("status", "active")
     if not isinstance(item["status"], str) or item["status"] not in {"active", "disabled"}:
         raise ExtensionRegistryError("status must be active or disabled")
