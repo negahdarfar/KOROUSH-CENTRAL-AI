@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import sqlite3
 import uuid
@@ -74,10 +75,16 @@ def create_tenant_key(*, user_id: str, team_id: str, repositories: list[str],
         raise TenantAuthError("user_id and team_id are required and must be at most 128 characters")
     if not repos:
         raise TenantAuthError("At least one approved repository is required")
+    # Match GitHub's owner/repository path shape rather than merely counting
+    # slashes. This rejects whitespace, URL paths, control characters and
+    # malformed identities before they become tenant authorization boundaries.
+    repository_pattern = re.compile(
+        r"[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?/"
+        r"[a-z0-9](?:[a-z0-9._-]{0,98}[a-z0-9])?"
+    )
     for repo in repos:
-        parts = repo.split("/")
-        if len(parts) != 2 or any(not part or part in {".", ".."} for part in parts):
-            raise TenantAuthError("Repositories must use exact owner/repository identities")
+        if not repository_pattern.fullmatch(repo) or repo.endswith(".git"):
+            raise TenantAuthError("Repositories must use valid exact GitHub owner/repository identities")
     supported = {"inference:chat"}
     if not allowed_scopes or not set(allowed_scopes).issubset(supported):
         raise TenantAuthError("Unsupported or empty tenant scope")
