@@ -39,13 +39,12 @@ async def publish_changes(repository: str, files: list[dict], summary: str, test
         base = await client.get(f"{API}/repos/{repository}/git/ref/heads/{base_branch}", headers=headers)
         base.raise_for_status()
         base_sha = base.json()["object"]["sha"]
-        stamp = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%Y%m%d%H%M%S")
-        branch = f"ai-fix/{stamp}"
-        created = await client.post(f"{API}/repos/{repository}/git/refs", headers=headers, json={"ref": f"refs/heads/{branch}", "sha": base_sha})
-        created.raise_for_status()
-        commits = []
+
+        # Preflight all target files before creating the branch. Reuse these SHAs
+        # in the write requests so concurrent source changes fail rather than overwrite.
+        current_files = {}
         for item in files:
-            path, content = item["path"], item["content"]
+            path = item["path"]
             if path.startswith("/") or ".." in path.split("/") or "\\" in path:
                 raise ValueError("Unsafe file path")
             current = await client.get(f"{API}/repos/{repository}/contents/{path}", headers=headers, params={"ref": base_branch})
@@ -53,6 +52,19 @@ async def publish_changes(repository: str, files: list[dict], summary: str, test
             current_data = current.json()
             if current_data.get("type") != "file" or not current_data.get("sha"):
                 raise ValueError(f"Target is not an existing file: {path}")
+            expected_sha = item.get("source_sha")
+            if expected_sha and current_data["sha"] != expected_sha:
+                raise ValueError(f"Source file changed after preview; generate and review a new preview: {path}")
+            current_files[path] = current_data
+
+        stamp = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%Y%m%d%H%M%S")
+        branch = f"ai-fix/{stamp}"
+        created = await client.post(f"{API}/repos/{repository}/git/refs", headers=headers, json={"ref": f"refs/heads/{branch}", "sha": base_sha})
+        created.raise_for_status()
+        commits = []
+        for item in files:
+            path, content = item["path"], item["content"]
+            current_data = current_files[path]
             update = await client.put(
                 f"{API}/repos/{repository}/contents/{path}",
                 headers=headers,
