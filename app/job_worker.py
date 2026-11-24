@@ -8,14 +8,15 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 from .durable_jobs import claim_job, fail_job, finish_job
 from .tenant_auth import authorize_job_execution
-from .job_payload_store import get_payload, JobPayloadError
+from .job_payload_store import get_payload, put_payload, delete_payload, JobPayloadError
 
 logger = logging.getLogger(__name__)
-JobHandler = Callable[[dict], Awaitable[None]]
-PolicyCheck = Callable[[dict], bool]
+JobHandler = Callable[[dict], Awaitable[Any]]
+PolicyCheck = Callable[[str | None, str | None, str | None], bool]
 
 
 class WorkerConfigurationError(RuntimeError):
@@ -43,8 +44,11 @@ async def run_once(worker_id: str, handlers: dict[str, JobHandler],
         payload = payload_resolver(job["payload_ref"])
         safe_job = {key: value for key, value in job.items() if key != "payload_ref"}
         safe_job["payload"] = payload
-        await handler(safe_job)
-        if not finish_job(job_id, worker_id):
+        result = await handler(safe_job)
+        result_ref = put_payload({"result": result}) if result is not None else None
+        if not finish_job(job_id, worker_id, result_ref=result_ref):
+            if result_ref:
+                delete_payload(result_ref)
             logger.warning("Job completion fenced: lease is no longer owned")
             return "lease_lost"
         return "succeeded"
