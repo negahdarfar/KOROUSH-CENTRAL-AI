@@ -19,7 +19,7 @@ jobs:
       - run: python -m compileall -q app tests sdk/python
       - name: Run Python tests
         run: pytest -q
-      - name: Run Node SDK tests
-        run: node --test tests/sdk-node.test.mjs
         env:
           PYTHONPATH: "${{ github.workspace }}:${{ github.workspace }}/sdk/python"
+      - name: Run Node SDK tests
+        run: node --test tests/sdk-node.test.mjs
