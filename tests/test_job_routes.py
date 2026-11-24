@@ -94,3 +94,18 @@ def test_job_submission_requires_jobs_scope(monkeypatch, tmp_path):
         assert False, "expected scope rejection"
     except HTTPException as exc:
         assert exc.status_code == 403
+
+
+
+def test_submission_is_blocked_when_worker_is_disabled(monkeypatch, tmp_path):
+    key = _key(monkeypatch, tmp_path)
+    monkeypatch.setenv("JOB_WORKER_ENABLED", "false")
+    from fastapi import HTTPException
+    try:
+        asyncio.run(submit_job(JobSubmitRequest(
+            repository="org/repo", job_type="chat.completion", idempotency_key="disabled",
+            payload={"messages": [{"role": "user", "content": "hello"}]},
+        ), x_tenant_key=key))
+        assert False, "expected worker-disabled response"
+    except HTTPException as exc:
+        assert exc.status_code == 503
