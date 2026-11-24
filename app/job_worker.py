@@ -33,7 +33,7 @@ async def run_once(worker_id: str, handlers: dict[str, JobHandler],
     job_id = job["id"]
     try:
         if not job.get("tenant_key_id") or not policy_check(
-            job.get("tenant_key_id"), job.get("repository"), job.get("team_id")
+            job.get("tenant_key_id"), job.get("repository"), job.get("team_id"), job.get("job_type")
         ):
             fail_job(job_id, worker_id, "tenant_authorization_revoked", retryable=False)
             return "rejected"
