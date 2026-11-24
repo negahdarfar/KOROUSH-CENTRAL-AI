@@ -282,3 +282,38 @@ def job_status(job_id: str, repository: str) -> dict | None:
         return dict(row) if row else None
     finally:
         conn.close()
+
+
+def job_queue_summary(repository: str | None = None) -> dict:
+    """Return aggregate queue counts and age metrics; never return job or tenant identifiers."""
+    repo = repository.strip().lower() if isinstance(repository, str) and repository.strip() else None
+    conn = _connect()
+    try:
+        where = " WHERE repository=?" if repo else ""
+        params = (repo,) if repo else ()
+        rows = conn.execute(
+            f"SELECT status, COUNT(*) AS count FROM durable_jobs{where} GROUP BY status",
+            params,
+        ).fetchall()
+        counts = {name: 0 for name in ("queued", "running", "succeeded", "failed", "dead_letter")}
+        counts.update({row["status"]: int(row["count"]) for row in rows if row["status"] in counts})
+        oldest = conn.execute(
+            f"SELECT MIN(created_at) AS oldest_queued FROM durable_jobs WHERE status='queued'"
+            + (" AND repository=?" if repo else ""),
+            params,
+        ).fetchone()
+        oldest_age = None
+        if oldest and oldest["oldest_queued"]:
+            try:
+                stamp = datetime.fromisoformat(oldest["oldest_queued"])
+                oldest_age = max(0, int((_now() - stamp).total_seconds()))
+            except (TypeError, ValueError):
+                oldest_age = None
+        return {
+            "counts": counts,
+            "total": sum(counts.values()),
+            "oldest_queued_age_seconds": oldest_age,
+            "scope": "repository" if repo else "global",
+        }
+    finally:
+        conn.close()
