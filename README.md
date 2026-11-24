@@ -160,3 +160,8 @@ Delivery attempts are tracked in SQLite by alert ID and channel to prevent dupli
 ## Central AI Agent Hub
 
 This service is the shared control plane for connected repositories. See [docs/CENTRAL_AGENT_HUB.md](docs/CENTRAL_AGENT_HUB.md) for the agent catalog, tenant integration contract, Python SDK, onboarding requirements, migration strategy, and current limitations. Discovery endpoints are `GET /api/platform/manifest` and tenant-scoped `GET /api/agents?repository=owner/repository`.
+
+
+## Live resource discovery
+
+The admin-only `POST /api/admin/discovery/search` endpoint searches public GitHub repository metadata with bounded terms, recency, result counts, timeouts, and response size. It returns ranked candidates and evidence gaps; it does not install, execute, or register external code. All pricing remains unverified until an administrator validates the official publisher and terms. See [docs/INTELLIGENT_DISCOVERY_ENGINE_V1_1.md](docs/INTELLIGENT_DISCOVERY_ENGINE_V1_1.md).
