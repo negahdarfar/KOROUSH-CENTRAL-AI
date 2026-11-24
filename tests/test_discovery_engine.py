@@ -87,7 +87,7 @@ def test_github_search_uses_fixed_host_and_bounded_response():
             self.request = None
         async def get(self, url, **kwargs):
             self.request = (url, kwargs)
-            return httpx.Response(200, json={"items": [{
+            return httpx.Response(200, request=httpx.Request("GET", url), json={"items": [{
                 "full_name": "owner/repo", "name": "repo",
                 "html_url": "https://github.com/owner/repo",
                 "description": "AI tool", "stargazers_count": 10,
