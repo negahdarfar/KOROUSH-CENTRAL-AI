@@ -10,7 +10,8 @@ import httpx
 from .config import settings
 from .avalai import list_avalai_model_catalog
 from .model_router import rank_avalai_models
-from .usage_ledger import record_usage
+from .usage_ledger import record_usage, normalize_usage
+from .quota_guard import reserve_inference, complete_reservation, cancel_reservation
 
 
 # Only fixed relative paths are allowed. Callers cannot choose arbitrary URLs.
@@ -78,30 +79,37 @@ async def execute_avalai_surface(surface: str, payload: dict, repository: str | 
     route = JSON_SURFACES[surface]["path"]
     url = llm["base_url"].rstrip("/") + route
     timeout = httpx.Timeout(180.0, connect=20.0)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.post(
-            url,
-            headers={"Authorization": f"Bearer {llm['api_key']}", "Content-Type": "application/json"},
-            json=body,
-        )
-        if not response.is_success:
-            # Return a bounded provider error, never credentials or request headers.
-            detail = response.text[:3000]
-            raise AvalAIRequestError(response.status_code, detail)
-        try:
-            data = response.json()
-        except ValueError as exc:
-            raise RuntimeError("AvalAI returned a non-JSON response on a JSON surface") from exc
-        request_id = response.headers.get("avalai-request-id") or response.headers.get("x-request-id") or data.get("id")
-        record_usage(repository=repository, provider="avalai", model=model, surface=surface,
-                     usage=data.get("usage"), provider_request_id=request_id)
-        return {
-            "provider": "avalai",
-            "surface": surface,
-            "model": model,
-            "request_id": response.headers.get("avalai-request-id") or response.headers.get("x-request-id"),
-            "result": data,
-        }
+    reservation_id = reserve_inference(repository, body)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(
+                url,
+                headers={"Authorization": f"Bearer {llm['api_key']}", "Content-Type": "application/json"},
+                json=body,
+            )
+            if not response.is_success:
+                detail = response.text[:3000]
+                raise AvalAIRequestError(response.status_code, detail)
+            try:
+                data = response.json()
+            except ValueError as exc:
+                raise RuntimeError("AvalAI returned a non-JSON response on a JSON surface") from exc
+            request_id = response.headers.get("avalai-request-id") or response.headers.get("x-request-id") or data.get("id")
+            prompt_tokens, completion_tokens, total_tokens = normalize_usage(data.get("usage"))
+            record_usage(repository=repository, provider="avalai", model=model, surface=surface,
+                         usage=data.get("usage"), provider_request_id=request_id)
+            complete_reservation(reservation_id, total_tokens or prompt_tokens + completion_tokens)
+            reservation_id = None
+            return {
+                "provider": "avalai",
+                "surface": surface,
+                "model": model,
+                "request_id": response.headers.get("avalai-request-id") or response.headers.get("x-request-id"),
+                "result": data,
+            }
+    finally:
+        if reservation_id:
+            cancel_reservation(reservation_id)
 
 
 class AvalAIRequestError(Exception):
