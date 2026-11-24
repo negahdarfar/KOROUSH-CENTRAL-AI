@@ -52,7 +52,7 @@ def _connect() -> sqlite3.Connection:
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS ix_jobs_claim ON durable_jobs(status, available_at, lease_until)")
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(durable_jobs)").fetchall()}
-    for name, declaration in (("tenant_key_id", "TEXT"), ("team_id", "TEXT"), ("user_id", "TEXT")):
+    for name, declaration in (("tenant_key_id", "TEXT"), ("team_id", "TEXT"), ("user_id", "TEXT"), ("result_ref", "TEXT")):
         if name not in columns:
             conn.execute(f"ALTER TABLE durable_jobs ADD COLUMN {name} {declaration}")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_jobs_repo_created ON durable_jobs(repository, created_at)")
@@ -169,7 +169,7 @@ def tenant_job_status(job_id: str, *, repository: str, tenant_identity: dict) ->
     try:
         row = conn.execute(
             """SELECT id,repository,job_type,status,attempts,max_attempts,available_at,
-                      lease_until,last_error_code,created_at,updated_at
+                      lease_until,last_error_code,created_at,updated_at,result_ref
                FROM durable_jobs
                WHERE id=? AND repository=? AND tenant_key_id=? AND team_id=? AND user_id=?""",
             (job_id, repo, tenant_identity.get("key_id"), tenant_identity.get("team_id"),
@@ -215,8 +215,10 @@ def claim_job(worker_id: str, *, lease_seconds: int = 60) -> dict | None:
         conn.close()
 
 
-def finish_job(job_id: str, worker_id: str) -> bool:
-    return _finish(job_id, worker_id, status="succeeded")
+def finish_job(job_id: str, worker_id: str, *, result_ref: str | None = None) -> bool:
+    if result_ref is not None:
+        result_ref = _validate_text(result_ref, "result_ref", 512, r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,511}")
+    return _finish(job_id, worker_id, status="succeeded", result_ref=result_ref)
 
 
 def fail_job(job_id: str, worker_id: str, error_code: str, *, retryable: bool = True) -> bool:
@@ -245,12 +247,13 @@ def fail_job(job_id: str, worker_id: str, error_code: str, *, retryable: bool = 
         conn.close()
 
 
-def _finish(job_id: str, worker_id: str, *, status: str) -> bool:
+def _finish(job_id: str, worker_id: str, *, status: str, result_ref: str | None = None) -> bool:
     conn = _connect()
     try:
-        cursor = conn.execute("""UPDATE durable_jobs SET status=?, lease_owner=NULL, lease_until=NULL,
-            updated_at=? WHERE id=? AND status='running' AND lease_owner=?""",
-            (status, _now().isoformat(), job_id, worker_id))
+        now = _now().isoformat()
+        cursor = conn.execute("""UPDATE durable_jobs SET status=?, result_ref=?, lease_owner=NULL, lease_until=NULL,
+            updated_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_until>?""",
+            (status, result_ref, now, job_id, worker_id, now))
         return cursor.rowcount == 1
     finally:
         conn.close()
