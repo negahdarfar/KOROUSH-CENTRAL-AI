@@ -11,11 +11,11 @@ The existing `LLM_*` configuration remains the default and is preserved. To sele
 - `AVALAI_API_KEY=<your AvalAI API key>`
 - `AVALAI_MODEL` (optional): leave empty for automatic selection from the authenticated account catalog, or set an exact available model ID.
 
-The service discovers the authenticated `/v1/models` catalog. If `AVALAI_MODEL` is empty, it automatically selects a suitable chat/reasoning model that is actually present in that account catalog. You can still select any returned model explicitly in the admin panel. Keep the API key in Railway Variables; never commit it to GitHub or paste it into chat.
+The service discovers the authenticated `/v1/models` catalog. In the zero-dollar mode, only chat-capable models whose authenticated pricing metadata explicitly reports zero input and output cost are eligible. Missing or ambiguous pricing is blocked. The admin panel can inspect metadata without running inference. Keep the API key in Railway Variables; never commit it to GitHub or paste it into chat.
 
 To return to the existing provider, set `LLM_PROVIDER=legacy`; the existing `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL` values remain available.
 
-After changing Railway variables, redeploy/restart the service and use `/panel` to run the diagnostics check. A successful diagnostic confirms one small live inference request, not every model capability.
+After changing Railway variables, redeploy/restart the service and use `/panel` to run diagnostics. Under the zero-dollar policy, diagnostics are metadata-only and do not send an inference request.
 
 Official AvalAI API reference: https://docs.avalai.org/en/api-reference/introduction
 
@@ -49,7 +49,7 @@ Official references: https://docs.avalai.org/en/api-reference/introduction, /ima
 
 The global inference policy is USD 0.00: only models whose authenticated catalog metadata explicitly reports zero pricing are eligible. Unknown-price and paid models are blocked. Metadata-only diagnostics do not send inference requests.
 
-Successful inference calls made through the agent and the JSON capability gateway are recorded in a SQLite usage ledger, grouped by repository and day/month. Token counts come from provider usage metadata; missing usage values remain zero and are never guessed. Calls without an explicit repository are grouped under `__unassigned__`. The admin-only `GET /api/usage` endpoint returns aggregate totals and does not expose prompts or responses.
+Successful inference calls made through the agent and the JSON capability gateway are recorded in a SQLite usage ledger, grouped by repository and day/month. Token counts come from provider usage metadata; missing usage values remain zero and are never guessed. Calls without an explicit repository identity are rejected before inference; the ledger does not accept unassigned usage. The admin-only `GET /api/usage` endpoint returns aggregate totals and does not expose prompts or responses.
 
 **Railway persistence requirement:** attach a Railway Volume to the service with mount path `/data` and set `USAGE_DB_PATH=/data/koroush_usage.sqlite3`. Without a mounted volume, SQLite data may be lost when Railway replaces the container. The ledger is accounting/observability, not a provider quota guarantee; free-tier quotas remain subject to provider limits and can change independently of price metadata.
 
@@ -91,7 +91,7 @@ Optional Railway variable `KOROUSH_WORKFLOW_POLICIES` accepts JSON. Resolution o
 
 Supported task classes: `general`, `coding`, `vision`, `fast`, `reasoning`, and `research`. Invalid JSON fails closed to safe defaults. Do not enable paid models until an intentional budget and provider-side spending controls are configured.
 
-**Scope note:** the team/repository policy registry and free-first ranking are implemented for the AvalAI selection path. Cross-provider automatic failover, durable background orchestration, per-team usage accounting, and enforceable budget ledgers are not yet implemented and must not be treated as active.
+**Current scope:** the global zero-dollar guard, AvalAI free-model failover, SQLite usage ledger, and per-repository preflight quotas are implemented in this draft branch. They are not active in production until the PR is reviewed, merged, and the Railway volume is configured. Multi-provider routing beyond catalog-verified AvalAI models, authenticated tenant identity, and durable background jobs remain future work.
 
 
 ### Per-repository preflight quotas and alerts
@@ -108,3 +108,23 @@ Project safety defaults (not AvalAI's published free-tier limits) are:
 Override limits with the Railway variable `KOROUSH_REPO_QUOTAS`, a JSON object keyed by exact lowercase `owner/repo` or `*` fallback. Supported integer keys: `requests_per_day`, `requests_per_month`, `tokens_per_day`, `tokens_per_month`. Invalid configuration fails closed. A conservative prompt/output-token estimate is reserved before the provider call; actual provider usage replaces it after success. If the provider omits usage metadata, the estimate is not represented as actual usage in the usage ledger.
 
 Threshold alerts are deduplicated at 70%, 85%, and 100%. Admin-only `GET /api/usage/alerts` returns recorded alerts; `GET /api/usage` continues to expose actual usage aggregates. Alerts are currently API-visible only; no Telegram/email delivery is configured. Quotas are internal project safeguards, not a guarantee of provider-side free quota or a hard provider billing ceiling.
+
+
+## Security and quality gates
+
+- CodeQL analyzes Python on pushes, pull requests, and a weekly schedule.
+- Dependabot checks Python dependencies and GitHub Actions weekly.
+- A concurrency regression test verifies that simultaneous requests cannot overbook a repository's request quota.
+- These checks supplement, but do not replace, review of Railway permissions, repository access controls, secret rotation, and production configuration.
+
+## Production activation checklist
+
+1. Review and merge only after CI and CodeQL complete successfully.
+2. Attach a persistent Railway Volume mounted at `/data`.
+3. Set `USAGE_DB_PATH=/data/koroush_usage.sqlite3`.
+4. Verify the mounted path is writable and usage survives a Railway restart.
+5. Confirm the active model catalog contains at least one chat model with explicit zero input and output pricing.
+6. Verify `/api/usage` and `/api/usage/alerts` with the admin key; never expose the admin key in client-side source or logs.
+7. Verify `/api/version` reports the expected production commit before declaring activation complete.
+
+The internal quota is a conservative project safeguard. It is not a provider-side billing cap and cannot guarantee that an upstream free tier will remain available or free.
