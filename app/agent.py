@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import json
+import logging
 import re
 
 import httpx
@@ -11,11 +12,16 @@ from .workflow_registry import resolve_workflow_policy
 from .usage_ledger import record_usage, normalize_usage
 from .quota_guard import reserve_inference, complete_reservation, cancel_reservation
 
+logger = logging.getLogger(__name__)
+
 
 def _record_chat_usage(repository: str, model: str, data: dict, response: httpx.Response, surface: str) -> None:
     request_id = response.headers.get("avalai-request-id") or response.headers.get("x-request-id") or data.get("id")
-    record_usage(repository=repository, provider="avalai", model=model, surface=surface,
-                 usage=data.get("usage"), provider_request_id=request_id)
+    try:
+        record_usage(repository=repository, provider="avalai", model=model, surface=surface,
+                     usage=data.get("usage"), provider_request_id=request_id)
+    except Exception:
+        logger.exception("Usage ledger write failed after successful inference")
 
 
 async def _resolve_model(llm: dict, requested_model: str | None, *, task: str = "general", repository: str | None = None) -> str:
