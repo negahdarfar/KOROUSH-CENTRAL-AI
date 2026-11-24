@@ -1,4 +1,5 @@
 import pytest
+import hashlib
 
 from app.event_bus import EventBusError, claim_event, list_events, publish_event, settle_event
 
@@ -11,7 +12,7 @@ def identity(key="11111111-1111-4111-8111-111111111111", repo="negahdarfar/demo"
 def publish(identity_value, key="evt-1", ref="vault:11111111-1111-4111-8111-111111111111"):
     return publish_event(identity=identity_value, repository="negahdarfar/demo",
         event_type="repo.sync.requested", schema_version=1, producer="hub",
-        consumer="youtube-worker", idempotency_key=key, payload_ref=ref)
+        consumer="youtube-worker", idempotency_key=key, payload_ref=ref,\n        payload_hash=hashlib.sha256(b"{}").hexdigest())
 
 
 def test_publish_is_idempotent_and_metadata_only(tmp_path, monkeypatch):
