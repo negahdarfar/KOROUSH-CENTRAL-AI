@@ -368,12 +368,29 @@ async def diagnostics(
                 catalog = await asyncio.wait_for(list_avalai_model_catalog(), timeout=15)
                 catalog_ms = round((clock.time() - catalog_started) * 1000)
                 available_models = {item["id"] for item in catalog}
-                if selected_model and selected_model not in available_models:
-                    raise ValueError("Requested model is not available to this AvalAI API key")
+                from .model_router import rank_avalai_models
+                eligible = rank_avalai_models(catalog, task="fast", free_only=True, allow_unknown_cost=False, allow_paid=False)
+                eligible_ids = {item["id"] for item in eligible}
+                if selected_model and selected_model not in eligible_ids:
+                    raise ValueError("Requested model is blocked by the zero-dollar policy")
                 if not selected_model:
-                    selected_model = select_avalai_model(catalog, task="fast")
-                if not selected_model:
-                    raise ValueError("No chat-capable model was selected from the AvalAI catalog")
+                    if not eligible:
+                        raise ValueError("No catalog-confirmed free chat model is available")
+                    selected_model = eligible[0]["id"]
+                # Diagnostics must never spend credits; verify catalog metadata only.
+                result["llm"] = {
+                    "status": "ok_free_catalog_only",
+                    "provider": "avalai",
+                    "model": selected_model,
+                    "model_selection": model_selection,
+                    "phase": "catalog_only",
+                    "inference_executed": False,
+                    "budget_usd": 0,
+                    "eligible_free_models": len(eligible),
+                    "timings_ms": {"catalog": catalog_ms, "chat_completion": None, "total": round((clock.time() - started) * 1000)},
+                }
+                result["elapsed_ms"] = round((clock.time() - started) * 1000)
+                return result
 
             phase = "chat_completion"
             url = llm["base_url"].rstrip("/") + "/chat/completions"
