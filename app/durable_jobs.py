@@ -89,6 +89,8 @@ def enqueue_job(repository: str, job_type: str, payload_ref: str, idempotency_ke
             (job_id, repo, kind, ref, key, max_attempts, now, now, now))
         row = conn.execute("SELECT * FROM durable_jobs WHERE repository=? AND idempotency_key=?",
                            (repo, key)).fetchone()
+        if row["job_type"] != kind or row["payload_ref"] != ref:
+            raise JobQueueError("idempotency key was already used with a different job type or payload reference")
         conn.execute("COMMIT")
         result = dict(row)
         result.pop("payload_ref", None)
@@ -105,29 +107,43 @@ def enqueue_job(repository: str, job_type: str, payload_ref: str, idempotency_ke
 
 def enqueue_tenant_job(repository: str, job_type: str, payload_ref: str, idempotency_key: str,
                        *, tenant_identity: dict, max_attempts: int = 5) -> dict:
-    """Enqueue only for an authenticated tenant identity bound to this repository."""
+    """Atomically enqueue and bind a job to an authenticated tenant identity."""
     if not isinstance(tenant_identity, dict):
         raise JobQueueError("authenticated tenant identity is required")
     key_id = _validate_text(tenant_identity.get("key_id"), "tenant_key_id", 64, r"[A-Fa-f0-9-]{36}")
     team_id = _validate_text(tenant_identity.get("team_id"), "team_id", 128, r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
     user_id = _validate_text(tenant_identity.get("user_id"), "user_id", 128, r"[A-Za-z0-9][A-Za-z0-9._:@+-]{0,127}")
     repo = _validate_text(repository.lower(), "repository", 201, r"[a-z0-9][a-z0-9._-]{0,99}/[a-z0-9][a-z0-9._-]{0,99}")
+    kind = _validate_text(job_type, "job_type", 80, r"[a-z][a-z0-9_.-]{1,79}")
+    ref = _validate_text(payload_ref, "payload_ref", 512, r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,511}")
+    idem = _validate_text(idempotency_key, "idempotency_key", 128, r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+    if isinstance(max_attempts, bool) or not isinstance(max_attempts, int) or not 1 <= max_attempts <= 20:
+        raise JobQueueError("max_attempts must be an integer from 1 to 20")
     if repo not in [str(item).lower() for item in tenant_identity.get("repositories", [])]:
         raise JobQueueError("repository is not assigned to authenticated tenant")
     if "jobs:enqueue" not in tenant_identity.get("scopes", []):
         raise JobQueueError("tenant key does not have jobs:enqueue scope")
-    result = enqueue_job(repo, job_type, payload_ref, idempotency_key, max_attempts=max_attempts)
+
+    now = _now().isoformat()
     conn = _connect()
     try:
         conn.execute("BEGIN IMMEDIATE")
-        row = conn.execute("SELECT tenant_key_id,team_id,user_id FROM durable_jobs WHERE id=?", (result["id"],)).fetchone()
-        if row["tenant_key_id"] and (row["tenant_key_id"] != key_id or row["team_id"] != team_id):
+        job_id = str(uuid.uuid4())
+        conn.execute("""INSERT OR IGNORE INTO durable_jobs
+            (id,repository,job_type,payload_ref,idempotency_key,status,max_attempts,available_at,
+             created_at,updated_at,tenant_key_id,team_id,user_id)
+            VALUES(?,?,?,?,?,'queued',?,?,?,?,?,?,?)""",
+            (job_id, repo, kind, ref, idem, max_attempts, now, now, now, key_id, team_id, user_id))
+        row = conn.execute("SELECT * FROM durable_jobs WHERE repository=? AND idempotency_key=?",
+                           (repo, idem)).fetchone()
+        if row["job_type"] != kind or row["payload_ref"] != ref:
+            raise JobQueueError("idempotency key was already used with a different job type or payload reference")
+        if row["tenant_key_id"] != key_id or row["team_id"] != team_id or row["user_id"] != user_id:
             raise JobQueueError("idempotency key is already bound to another tenant identity")
-        conn.execute("""UPDATE durable_jobs SET tenant_key_id=?,team_id=?,user_id=?
-                        WHERE id=? AND (tenant_key_id IS NULL OR tenant_key_id=?)""",
-                     (key_id, team_id, user_id, result["id"], key_id))
         conn.execute("COMMIT")
-        result.update({"team_id": team_id, "user_id": user_id})
+        result = dict(row)
+        result.pop("payload_ref", None)
+        result.pop("idempotency_key", None)
         return result
     except Exception:
         if conn.in_transaction:
