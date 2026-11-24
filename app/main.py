@@ -18,6 +18,7 @@ from .quota_guard import list_usage_alerts
 from .tenant_routes import router as tenant_auth_router
 from .tenant_auth import TenantAuthError, authorize_tenant_inference
 from .alert_notifier import dispatch_usage_alerts, run_alert_worker
+from .operational_health import router as operational_health_router
 
 from contextlib import asynccontextmanager
 
@@ -43,6 +44,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(tenant_auth_router)
+app.include_router(operational_health_router)
 
 
 
