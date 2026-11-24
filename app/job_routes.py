@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import re
+import hashlib
+import json
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from .durable_jobs import JobQueueError, enqueue_tenant_job, tenant_job_status
+from .durable_jobs import IdempotencyConflict, JobQueueError, enqueue_tenant_job, tenant_job_status
 from .job_payload_store import JobPayloadError, delete_payload, get_payload, put_payload
 from .worker_runtime import worker_ready
 from .tenant_auth import authenticate_tenant_key
@@ -53,6 +55,7 @@ async def submit_job(request: JobSubmitRequest, x_tenant_key: str | None = Heade
         result = enqueue_tenant_job(
             repository, request.job_type, payload_ref, request.idempotency_key,
             tenant_identity=identity, max_attempts=request.max_attempts,
+            payload_hash=hashlib.sha256(json.dumps(request.payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest(),
         )
         if result.get("idempotent_replay"):
             delete_payload(payload_ref)
@@ -64,6 +67,10 @@ async def submit_job(request: JobSubmitRequest, x_tenant_key: str | None = Heade
             "idempotent_replay": result["idempotent_replay"],
             "created_at": result["created_at"],
         }
+    except IdempotencyConflict as exc:
+        if payload_ref:
+            delete_payload(payload_ref)
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except JobPayloadError as exc:
         if payload_ref:
             delete_payload(payload_ref)
