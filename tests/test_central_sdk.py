@@ -118,3 +118,29 @@ def test_sdk_rejects_malformed_repository_and_job_arguments():
             await client.close()
 
     asyncio.run(run())
+
+
+
+def test_sdk_submit_agent_binds_fixed_agent_id_and_job_type():
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(202, json={"job_id": "agent-job", "status": "queued"})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = CentralAIClient("https://central.example", "kor_key", "org/repo", client=http)
+            result = await client.submit_agent(
+                agent_id="koroush.text-summarizer",
+                payload={"text": "summarize", "agent_id": "tenant.override"},
+                idempotency_key="summary-1",
+            )
+            assert result["status"] == "queued"
+            import json
+            body = json.loads(seen[0].read())
+            assert body["job_type"] == "agent.execute"
+            assert body["payload"]["agent_id"] == "koroush.text-summarizer"
+            await client.close()
+
+    asyncio.run(run())
