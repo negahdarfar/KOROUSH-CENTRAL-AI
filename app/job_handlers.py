@@ -69,4 +69,4 @@ async def chat_completion_job(job: dict) -> dict[str, Any]:
 
 
 def default_job_handlers() -> dict:
-    return {"chat.completion": chat_completion_job}
+    return {"chat.completion": chat_completion_job, "agent.execute": agent_execute_job}
