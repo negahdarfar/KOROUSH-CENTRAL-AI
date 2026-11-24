@@ -139,7 +139,7 @@ document.getElementById('check').addEventListener('click',async()=>{
  adminKey=key;out.textContent='در حال بررسی...';
  try{
   const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),50000);
+  const timer=setTimeout(()=>controller.abort(),90000);
   let r;
   const chosenModel=document.getElementById('model').value;
   const diagnosticsUrl=new URL('/api/diagnostics',window.location.origin);
@@ -231,6 +231,8 @@ async def diagnostics(
     model: str | None = Query(default=None, min_length=1, max_length=200),
 ):
     require_admin(x_admin_key)
+    clock = asyncio.get_running_loop()
+    started = clock.time()
     result = {
         "service": "ok",
         "github": {"status": "not_checked"},
@@ -254,24 +256,34 @@ async def diagnostics(
             "message": "Configure the provider base URL and API key; AVALAI_MODEL is optional when using AvalAI",
         }
     else:
+        selected_model = model or llm["model"]
+        model_selection = "request" if model else ("configured" if llm["model"] else "catalog_auto")
+        phase = "catalog"
+        catalog_ms = None
+        chat_ms = None
         try:
-            selected_model = model or llm["model"]
-            model_selection = "request" if model else ("configured" if llm["model"] else "catalog_auto")
             if llm["provider"] == "avalai":
+                catalog_started = clock.time()
                 catalog = await asyncio.wait_for(list_avalai_model_catalog(), timeout=15)
+                catalog_ms = round((clock.time() - catalog_started) * 1000)
                 available_models = {item["id"] for item in catalog}
                 if selected_model and selected_model not in available_models:
                     raise ValueError("Requested model is not available to this AvalAI API key")
                 if not selected_model:
-                    selected_model = select_avalai_model(catalog, task="general")
-            url = llm["base_url"] + "/chat/completions"
+                    selected_model = select_avalai_model(catalog, task="fast")
+                if not selected_model:
+                    raise ValueError("No chat-capable model was selected from the AvalAI catalog")
+
+            phase = "chat_completion"
+            url = llm["base_url"].rstrip("/") + "/chat/completions"
             payload = {
                 "model": selected_model,
                 "messages": [{"role": "user", "content": "Reply with OK"}],
                 "max_tokens": 5,
                 "temperature": 0,
             }
-            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=8.0)) as client:
+            chat_started = clock.time()
+            async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=8.0)) as client:
                 response = await client.post(
                     url,
                     headers={"Authorization": f"Bearer {llm['api_key']}"},
@@ -279,17 +291,50 @@ async def diagnostics(
                 )
                 response.raise_for_status()
                 response.json()
-            result["llm"] = {"status": "ok", "provider": llm["provider"], "model": selected_model, "model_selection": model_selection}
+            chat_ms = round((clock.time() - chat_started) * 1000)
+            result["llm"] = {
+                "status": "ok",
+                "provider": llm["provider"],
+                "model": selected_model,
+                "model_selection": model_selection,
+                "phase": "complete",
+                "timings_ms": {"catalog": catalog_ms, "chat_completion": chat_ms, "total": round((clock.time() - started) * 1000)},
+            }
         except asyncio.TimeoutError:
-            result["llm"] = {"status": "timeout", "provider": llm["provider"], "message": "AvalAI catalog check exceeded 15 seconds"}
+            result["llm"] = {
+                "status": "timeout", "provider": llm["provider"],
+                "model": selected_model or None, "phase": phase,
+                "message": "AvalAI model catalog check exceeded 15 seconds" if phase == "catalog" else "LLM request exceeded its 60-second timeout",
+                "timings_ms": {"catalog": catalog_ms, "chat_completion": chat_ms, "total": round((clock.time() - started) * 1000)},
+            }
         except httpx.TimeoutException:
-            result["llm"] = {"status": "timeout", "provider": llm["provider"], "model": selected_model if "selected_model" in locals() else None, "message": "LLM request exceeded 30 seconds"}
+            result["llm"] = {
+                "status": "timeout", "provider": llm["provider"],
+                "model": selected_model or None, "phase": phase,
+                "message": "AvalAI model catalog request timed out" if phase == "catalog" else "LLM chat completion exceeded 60 seconds",
+                "timings_ms": {"catalog": catalog_ms, "chat_completion": chat_ms, "total": round((clock.time() - started) * 1000)},
+            }
         except ValueError as exc:
-            result["llm"] = {"status": "error", "provider": llm["provider"], "model": selected_model if "selected_model" in locals() else None, "message": str(exc)}
+            result["llm"] = {
+                "status": "error", "provider": llm["provider"],
+                "model": selected_model or None, "phase": phase, "message": str(exc),
+                "timings_ms": {"catalog": catalog_ms, "chat_completion": chat_ms, "total": round((clock.time() - started) * 1000)},
+            }
         except httpx.HTTPStatusError as exc:
-            result["llm"] = {"status": "error", "provider": llm["provider"], "model": selected_model if "selected_model" in locals() else None, "provider_status": exc.response.status_code, "message": "AvalAI rejected the chat request; check model access, key and quota"}
+            result["llm"] = {
+                "status": "error", "provider": llm["provider"],
+                "model": selected_model or None, "phase": phase,
+                "provider_status": exc.response.status_code,
+                "message": "AvalAI rejected the request; check model access, key and quota",
+                "timings_ms": {"catalog": catalog_ms, "chat_completion": chat_ms, "total": round((clock.time() - started) * 1000)},
+            }
         except Exception:
-            result["llm"] = {"status": "error", "provider": llm["provider"], "model": selected_model if "selected_model" in locals() else None, "message": "LLM request failed; verify provider, key, model and available quota"}
+            result["llm"] = {
+                "status": "error", "provider": llm["provider"],
+                "model": selected_model or None, "phase": phase,
+                "message": "LLM request failed; verify provider, key, model and available quota",
+                "timings_ms": {"catalog": catalog_ms, "chat_completion": chat_ms, "total": round((clock.time() - started) * 1000)},
+            }
 
     return result
 
