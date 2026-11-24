@@ -45,6 +45,14 @@ AvalAI API calls may consume account credit or incur charges according to the ac
 Official references: https://docs.avalai.org/en/api-reference/introduction, /images, /audio, /embeddings, /decisions, /responses.
 
 
+## Zero-dollar guard and usage ledger
+
+The global inference policy is USD 0.00: only models whose authenticated catalog metadata explicitly reports zero pricing are eligible. Unknown-price and paid models are blocked. Metadata-only diagnostics do not send inference requests.
+
+Successful inference calls made through the agent and the JSON capability gateway are recorded in a SQLite usage ledger, grouped by repository and day/month. Token counts come from provider usage metadata; missing usage values remain zero and are never guessed. Calls without an explicit repository are grouped under `__unassigned__`. The admin-only `GET /api/usage` endpoint returns aggregate totals and does not expose prompts or responses.
+
+**Railway persistence requirement:** attach a Railway Volume to the service with mount path `/data` and set `USAGE_DB_PATH=/data/koroush_usage.sqlite3`. Without a mounted volume, SQLite data may be lost when Railway replaces the container. The ledger is accounting/observability, not a provider quota guarantee; free-tier quotas remain subject to provider limits and can change independently of price metadata.
+
 ## Evidence-aware AvalAI model intelligence
 
 The admin panel can inspect selected account models in batches of up to 25 using `POST /api/avalai/models/inspect`. Each model detail lookup is bounded to five concurrent requests and uses a per-request timeout. The inspection endpoint first verifies every requested ID against the authenticated `/v1/models` catalog.
