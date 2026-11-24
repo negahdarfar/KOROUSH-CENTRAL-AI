@@ -111,7 +111,7 @@ async def audit(owner: str, repo: str, x_admin_key: str | None = Header(default=
     require_admin(x_admin_key)
     full_name = f"{owner}/{repo}"
     try:
-        inventory = await gh.get_repo_tree(full_name)
+        inventory = await gh.get_repo_snapshot(full_name)
         report = await summarize_audit({"repository": full_name, "inventory": inventory})
         return {"repository": full_name, "mode": "read-only", "inventory": inventory, "report_fa": report}
     except PermissionError as e:
