@@ -127,15 +127,16 @@ def _finish(alert_id: int, channel: str, *, success: bool) -> None:
 
 
 def _message(alert: dict[str, Any]) -> str:
-    return (
-        "KOROUSH CENTRAL AI — Usage alert\\n"
-        f"Repository: {alert['repository']}\\n"
-        f"Metric: {alert['metric']}\\n"
-        f"Threshold: {alert['threshold']}%\\n"
-        f"Usage: {alert['used']} / {alert['quota']}\\n"
-        f"Period: {alert['period']}\\n"
-        f"Created: {alert['created_at']}"
-    )
+    newline = chr(10)
+    return newline.join((
+        "KOROUSH CENTRAL AI — Usage alert",
+        f"Repository: {alert['repository']}",
+        f"Metric: {alert['metric']}",
+        f"Threshold: {alert['threshold']}%",
+        f"Usage: {alert['used']} / {alert['quota']}",
+        f"Period: {alert['period']}",
+        f"Created: {alert['created_at']}",
+    ))
 
 
 async def _send_telegram(message: str) -> None:
