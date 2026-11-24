@@ -94,12 +94,9 @@ def test_api_catalog_paths_match_registered_fastapi_routes():
     from app.main import app
 
     registered = set()
-    for route in app.routes:
-        path = getattr(route, "path", None)
-        methods = getattr(route, "methods", set()) or set()
-        if path:
-            for method in methods:
-                registered.add((method, path))
+    for path, operations in app.openapi()["paths"].items():
+        for method in operations:
+            registered.add((method.upper(), path))
     missing = [
         (item["method"], item["path"])
         for item in list_apis()
