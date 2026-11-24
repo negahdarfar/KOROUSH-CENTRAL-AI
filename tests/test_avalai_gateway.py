@@ -40,3 +40,17 @@ def test_gateway_requires_explicit_approved_repository_identity():
         require_approved_repository("other/repo", {"org/repo"})
     with pytest.raises(ValueError, match="owner/repository"):
         require_approved_repository("org/../repo", {"org/../repo"})
+
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "surface",
+    ["responses", "decisions", "systemone", "extraction", "embeddings",
+     "images_generations", "audio_speech", "moderations", "rerank", "ocr", "videos"],
+)
+async def test_non_chat_gateway_surfaces_fail_closed_before_provider_access(surface):
+    from app.avalai_gateway import execute_avalai_surface
+
+    with pytest.raises(ValueError, match="USD 0.00 policy"):
+        await execute_avalai_surface(surface, {"model": "must-not-run"}, "org/repo")
