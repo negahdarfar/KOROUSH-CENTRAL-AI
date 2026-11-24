@@ -13,7 +13,7 @@ from .workflow_registry import resolve_workflow_policy
 from .usage_ledger import record_usage, normalize_usage
 from .quota_guard import reserve_inference, complete_reservation, cancel_reservation
 from .avalai_gateway import require_approved_repository
-from .provider_router import verified_free_chat_providers, configured_chat_providers
+from .provider_router import configured_chat_providers
 from .provider_dispatch import verified_candidates, dispatch_chat_completion
 
 logger = logging.getLogger(__name__)
