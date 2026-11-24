@@ -29,6 +29,7 @@ async def _resolve_model(llm: dict, requested_model: str | None, *, task: str = 
     if llm["provider"] != "avalai":
         raise RuntimeError("Inference blocked by the global USD 0.00 budget: only catalog-confirmed free AvalAI models are permitted")
 
+    repository = require_approved_repository(repository, settings.repo_allowlist)
     catalog = await list_avalai_models()
     policy = resolve_workflow_policy(repository=repository)
     # A repository/team policy overrides the inferred task only when it sets
