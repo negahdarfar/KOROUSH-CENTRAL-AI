@@ -7,3 +7,7 @@ Recovery is refused if the job is not dead-lettered, its row changed since it wa
 The endpoint does not expose payload contents or references. It returns only job metadata required to confirm the state transition. This is an operator recovery control, not an automatic retry bypass or a way to override tenant policy.
 
 Every successful operator requeue writes a metadata-only `job_admin_events` row in the same SQLite transaction as the state change. The audit row records job ID, repository, action, event time, and manual requeue count; it never records admin credentials, payloads, prompts, or tenant secrets. The audit record and queue transition therefore commit or roll back together.
+
+## Recovery audit endpoint
+
+Administrators can inspect operator recovery events at GET /api/admin/jobs/recovery-audit. The endpoint requires the same ADMIN_API_KEY, supports an optional repository filter, and limits each page to 1–100 events. Use both `next_before_event_at` and `next_before_event_id` as the next request's cursor to avoid skipping events that share the same timestamp. The endpoint returns event metadata only and never reads encrypted job payloads.
