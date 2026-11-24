@@ -11,7 +11,6 @@ import os
 import smtplib
 import sqlite3
 from email.message import EmailMessage
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -42,12 +41,40 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def _smtp_settings() -> dict[str, Any] | None:
+    """Return validated SMTP settings; never send authenticated SMTP in cleartext."""
+    required = ("SMTP_HOST", "SMTP_FROM", "SMTP_TO")
+    if not all(os.getenv(name, "").strip() for name in required):
+        return None
+    try:
+        port = int(os.getenv("SMTP_PORT", "587"))
+    except ValueError:
+        return None
+    if not 1 <= port <= 65535:
+        return None
+    username = os.getenv("SMTP_USERNAME", "")
+    password = os.getenv("SMTP_PASSWORD", "")
+    use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() not in {"0", "false", "no"}
+    if username and (not password or not use_tls):
+        return None
+    if password and not username:
+        return None
+    return {
+        "host": os.environ["SMTP_HOST"].strip(),
+        "port": port,
+        "sender": os.environ["SMTP_FROM"].strip(),
+        "recipient": os.environ["SMTP_TO"].strip(),
+        "username": username,
+        "password": password,
+        "use_tls": use_tls,
+    }
+
+
 def _configured_channels() -> list[str]:
     channels = []
     if os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("TELEGRAM_CHAT_ID"):
         channels.append("telegram")
-    required = ("SMTP_HOST", "SMTP_FROM", "SMTP_TO")
-    if all(os.getenv(name) for name in required):
+    if _smtp_settings() is not None:
         channels.append("email")
     return channels
 
@@ -101,12 +128,12 @@ def _finish(alert_id: int, channel: str, *, success: bool) -> None:
 
 def _message(alert: dict[str, Any]) -> str:
     return (
-        "KOROUSH CENTRAL AI — Usage alert\n"
-        f"Repository: {alert['repository']}\n"
-        f"Metric: {alert['metric']}\n"
-        f"Threshold: {alert['threshold']}%\n"
-        f"Usage: {alert['used']} / {alert['quota']}\n"
-        f"Period: {alert['period']}\n"
+        "KOROUSH CENTRAL AI — Usage alert\\n"
+        f"Repository: {alert['repository']}\\n"
+        f"Metric: {alert['metric']}\\n"
+        f"Threshold: {alert['threshold']}%\\n"
+        f"Usage: {alert['used']} / {alert['quota']}\\n"
+        f"Period: {alert['period']}\\n"
         f"Created: {alert['created_at']}"
     )
 
@@ -124,28 +151,26 @@ async def _send_telegram(message: str) -> None:
 
 
 def _send_email_sync(subject: str, body: str) -> None:
+    config = _smtp_settings()
+    if config is None:
+        raise RuntimeError("SMTP settings are incomplete or unsafe; authenticated SMTP requires STARTTLS")
     message = EmailMessage()
     message["Subject"] = subject
-    message["From"] = os.environ["SMTP_FROM"]
-    message["To"] = os.environ["SMTP_TO"]
+    message["From"] = config["sender"]
+    message["To"] = config["recipient"]
     message.set_content(body)
-    host = os.environ["SMTP_HOST"]
-    port = int(os.getenv("SMTP_PORT", "587"))
-    username = os.getenv("SMTP_USERNAME", "")
-    password = os.getenv("SMTP_PASSWORD", "")
-    use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() not in {"0", "false", "no"}
-    with smtplib.SMTP(host, port, timeout=15) as server:
-        if use_tls:
+    with smtplib.SMTP(config["host"], config["port"], timeout=15) as server:
+        if config["use_tls"]:
             server.starttls()
-        if username:
-            server.login(username, password)
+        if config["username"]:
+            server.login(config["username"], config["password"])
         server.send_message(message)
 
 
 async def dispatch_usage_alerts(limit: int = 100) -> dict[str, Any]:
     channels = _configured_channels()
     if not channels:
-        return {"configured_channels": [], "sent": 0, "failed": 0, "skipped": "No Telegram or SMTP delivery settings are configured"}
+        return {"configured_channels": [], "sent": 0, "failed": 0, "skipped": "No safe Telegram or SMTP delivery settings are configured"}
     alerts = list_usage_alerts(limit=limit)
     sent = failed = skipped = 0
     for alert in reversed(alerts):
