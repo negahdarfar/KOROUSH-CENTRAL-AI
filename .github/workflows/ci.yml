@@ -18,8 +18,16 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: python -m compileall -q app tests sdk/python
       - name: Run Python tests
-        run: pytest -q
+        run: pytest -q -ra --junitxml=test-results/python-tests.xml
         env:
           PYTHONPATH: "${{ github.workspace }}:${{ github.workspace }}/sdk/python"
       - name: Run Node SDK tests
         run: node --test tests/sdk-node.test.mjs
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integrated-release-test-results
+          path: test-results/
+          if-no-files-found: warn
+          retention-days: 14
