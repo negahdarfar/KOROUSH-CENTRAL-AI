@@ -69,7 +69,7 @@ def _eligible(provider: dict, policy: dict, *, is_primary: bool) -> bool:
     cost = provider.get("cost_class", "unknown")
     if cost == "paid" and not policy.get("allow_paid", False):
         return False
-    if cost == "unknown" and not policy.get("allow_unknown_cost", False):
+    if cost == "unknown" and (not policy.get("allow_unknown_cost", False) or (not is_primary and os.getenv("KOROUSH_ALLOW_UNKNOWN_PROVIDER_FALLBACK", "").lower() != "true")):
         return False
     if policy.get("free_only", False) and cost != "free":
         return False
