@@ -19,6 +19,7 @@ from .quota_guard import list_usage_alerts
 from .tenant_routes import router as tenant_auth_router
 from .tenant_auth import TenantAuthError, authorize_tenant_inference
 from .alert_notifier import dispatch_usage_alerts, run_alert_worker
+from .operational_alerts import run_operational_alert_worker
 from .operational_health import router as operational_health_router
 from .job_routes import router as job_router
 from .worker_runtime import run_worker_loop, worker_enabled
@@ -30,11 +31,12 @@ from contextlib import asynccontextmanager
 async def lifespan(app: FastAPI):
     """Own the notification worker lifecycle using FastAPI's supported lifespan API."""
     alert_task = asyncio.create_task(run_alert_worker())
+    operational_alert_task = asyncio.create_task(run_operational_alert_worker())
     job_task = asyncio.create_task(run_worker_loop()) if worker_enabled() else None
     try:
         yield
     finally:
-        tasks = [alert_task] + ([job_task] if job_task is not None else [])
+        tasks = [alert_task, operational_alert_task] + ([job_task] if job_task is not None else [])
         for task in tasks:
             task.cancel()
         for task in tasks:
