@@ -164,7 +164,7 @@ def platform_manifest() -> dict:
         "platform_version": PLATFORM_VERSION,
         "integration_model": "central-control-plane",
         "agents": list_agents(),
-        "apis": list_apis(),
+        "apis": list_apis(include_admin=False),
         "providers": [deepcopy(item) for item in _PROVIDER_CATALOG],
         "capabilities": [deepcopy(item) for item in _CAPABILITIES],
         "security": {
