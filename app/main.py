@@ -113,7 +113,7 @@ async def audit(owner: str, repo: str, x_admin_key: str | None = Header(default=
     try:
         inventory = await gh.get_repo_snapshot(full_name)
         report = await summarize_audit({"repository": full_name, "inventory": inventory})
-        return {"repository": full_name, "mode": "read-only", "inventory": inventory, "report_fa": report}
+        return {"repository": full_name, "mode": "read-only", "inventory": {"default_branch": inventory["default_branch"], "truncated": inventory["truncated"], "file_count": inventory["file_count"], "files": [{"path": item["path"], "characters_analyzed": len(item["content"])} for item in inventory["files"]]}, "report_fa": report}
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception:
