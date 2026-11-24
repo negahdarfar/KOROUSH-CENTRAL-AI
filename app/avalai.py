@@ -6,7 +6,9 @@ from .config import settings
 
 def extract_model_catalog(payload: dict) -> list[dict]:
     """Extract only the lightweight model IDs; do not fan out to per-model detail calls."""
-    raw_models = payload.get("data", []) if isinstance(payload, dict) else []
+    raw_models = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(raw_models, list):
+        raw_models = []
     return [
         {"id": item["id"], "owned_by": item.get("owned_by"), "mode": None}
         for item in raw_models
