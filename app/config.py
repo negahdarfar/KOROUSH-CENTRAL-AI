@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     llm_model: str = ""
     allowed_repos: str = ""
     port: int = 8000
+    admin_api_key: str = ""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
 
     @property
