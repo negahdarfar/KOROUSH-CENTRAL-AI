@@ -4,6 +4,32 @@ import httpx
 from .config import settings
 
 
+def extract_model_catalog(payload: dict) -> list[dict]:
+    """Extract only the lightweight model IDs; do not fan out to per-model detail calls."""
+    raw_models = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(raw_models, list):
+        raw_models = []
+    return [
+        {"id": item["id"], "owned_by": item.get("owned_by"), "mode": None}
+        for item in raw_models
+        if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"].strip()
+    ]
+
+
+async def list_avalai_model_catalog() -> list[dict]:
+    """Fetch the authenticated model catalog with one request for fast diagnostics."""
+    llm = settings.active_llm
+    if llm["provider"] != "avalai" or not llm["api_key"] or not llm["base_url"]:
+        raise RuntimeError("AvalAI provider is not configured")
+    async with httpx.AsyncClient(timeout=httpx.Timeout(12.0, connect=5.0)) as client:
+        response = await client.get(
+            f"{llm['base_url']}/models",
+            headers={"Authorization": f"Bearer {llm['api_key']}"},
+        )
+        response.raise_for_status()
+        return extract_model_catalog(response.json())
+
+
 async def list_avalai_models() -> list[dict]:
     """Return the authenticated AvalAI catalog with per-model capability metadata."""
     llm = settings.active_llm
@@ -11,14 +37,13 @@ async def list_avalai_models() -> list[dict]:
         raise RuntimeError("AvalAI provider is not configured")
 
     headers = {"Authorization": f"Bearer {llm['api_key']}"}
-    timeout = httpx.Timeout(30.0)
+    timeout = httpx.Timeout(20.0, connect=5.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.get(f"{llm['base_url']}/models", headers=headers)
         response.raise_for_status()
         payload = response.json()
 
-        raw_models = payload.get("data", []) if isinstance(payload, dict) else []
-        models = [item for item in raw_models if isinstance(item, dict) and isinstance(item.get("id"), str)]
+        models = extract_model_catalog(payload)
         semaphore = asyncio.Semaphore(8)
 
         async def enrich(item: dict) -> dict:
