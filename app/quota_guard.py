@@ -173,9 +173,11 @@ def complete_reservation(reservation_id: str, actual_tokens: int) -> None:
     conn = _connect()
     try:
         conn.execute(
-            """UPDATE quota_reservations SET status='complete', actual_tokens=?
+            """UPDATE quota_reservations
+               SET status='complete',
+                   actual_tokens=CASE WHEN ? > 0 THEN ? ELSE estimated_tokens END
                WHERE id=? AND status='pending'""",
-            (max(0, int(actual_tokens)), reservation_id),
+            (max(0, int(actual_tokens)), max(0, int(actual_tokens)), reservation_id),
         )
     finally:
         conn.close()
