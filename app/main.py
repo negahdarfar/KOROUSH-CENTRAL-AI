@@ -8,8 +8,9 @@ from .config import settings
 from .github_client import GitHubClient
 from .agent import summarize_audit, generate_fix_proposal, generate_fix_implementation, editable_snapshot_paths, validate_fix_implementation, build_approval_digest
 from .github_writer import publish_changes
-from .avalai import list_avalai_models, list_avalai_model_catalog
+from .avalai import list_avalai_models, list_avalai_model_catalog, inspect_avalai_models
 from .model_router import select_avalai_model
+from .model_intelligence import classify_model
 from .avalai_gateway import CAPABILITY_CATALOG, JSON_SURFACES, execute_avalai_surface, AvalAIRequestError
 from .version import runtime_version
 
@@ -77,7 +78,9 @@ small{color:#b9c6d8}
 <hr><h3>مدل هوش مصنوعی AvalAI</h3>
 <button id="loadModels">دریافت فهرست مدل‌های مجاز حساب AvalAI</button>
 <select id="model"><option value="">مدل پیش‌فرض Railway</option></select>
-<small id="modelInfo">پس از دریافت فهرست، مدل موردنظر را انتخاب کنید. برای کارهای متنی، مدل‌های chat مناسب‌اند.</small>
+<small id="modelInfo">پس از دریافت فهرست، مدل موردنظر را انتخاب کنید. نوع و قیمت فقط پس از دریافت فراداده قابل تأیید است.</small>
+ <button id="inspectModels">تحلیل دسته بعدی مدل‌ها (حداکثر ۲۵ مدل)</button>
+ <pre id="modelAnalysis">برای بررسی قابلیت‌ها و قیمت، ابتدا فهرست مدل‌ها را بارگذاری کنید.</pre>
 <hr><h3>درگاه چندقابلیتی AvalAI</h3>
 <p>از فهرست زیر یک API را انتخاب و بدنه JSON متناسب با مستندات همان قابلیت را ارسال کنید. مدل انتخابی باید در فهرست مجاز حساب باشد.</p>
 <select id="surface">
@@ -111,6 +114,8 @@ small{color:#b9c6d8}
 <script>
 let adminKey='';
 let pendingFixPreview=null;
+let modelCatalog=[];
+let modelAnalysisOffset=0;
 async function loadDeploymentVersion(){
  const status=document.getElementById('versionStatus');
  const details=document.getElementById('versionDetails');
@@ -174,7 +179,7 @@ document.getElementById('loadModels').addEventListener('click',async()=>{
    option.textContent=item.id;
    select.appendChild(option);
   }
-  out.textContent='تعداد مدل‌های فهرست حساب: '+data.count+'؛ این فهرست فقط شناسه مدل‌ها را نشان می‌دهد و نوع/قابلیت هر مدل از این پاسخ قابل تأیید نیست.';
+  out.textContent='تعداد مدل‌های فهرست حساب: '+data.count+'؛ برای دریافت مشخصات، دکمه تحلیل دسته‌ای را بزنید.';
  }catch(e){
   out.textContent=e.name==='AbortError'
    ?'مهلت دریافت فهرست تمام شد (۲۵ ثانیه). اتصال سرویس یا AvalAI را بررسی و دوباره تلاش کنید.'
@@ -184,6 +189,40 @@ document.getElementById('loadModels').addEventListener('click',async()=>{
   button.disabled=false;
  }
 });
+
+document.getElementById('inspectModels').addEventListener('click',async()=>{
+ const out=document.getElementById('modelAnalysis');
+ const button=document.getElementById('inspectModels');
+ if(!adminKey){out.textContent='ابتدا اتصال مدیریتی را آزمایش کنید.';return;}
+ if(!modelCatalog.length){out.textContent='ابتدا فهرست مدل‌ها را بارگذاری کنید.';return;}
+ if(modelAnalysisOffset>=modelCatalog.length){out.textContent='بررسی تمام مدل‌های فهرست‌شده به پایان رسیده است.';return;}
+ const batch=modelCatalog.slice(modelAnalysisOffset,modelAnalysisOffset+25);
+ button.disabled=true;
+ out.textContent='در حال بررسی '+(modelAnalysisOffset+1)+' تا '+(modelAnalysisOffset+batch.length)+' از '+modelCatalog.length+' مدل...';
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),70000);
+ try{
+  const response=await fetch('/api/avalai/models/inspect',{
+   method:'POST',headers:{...headers(),'Content-Type':'application/json'},
+   body:JSON.stringify({model_ids:batch.map(item=>item.id)}),
+   signal:controller.signal,cache:'no-store'
+  });
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.detail||'خطا در تحلیل مدل‌ها (HTTP '+response.status+')');
+  modelAnalysisOffset+=batch.length;
+  out.textContent=JSON.stringify({
+   progress:{inspected:modelAnalysisOffset,total:modelCatalog.length,remaining:modelCatalog.length-modelAnalysisOffset},
+   results:data.models,notes:data.notes
+  },null,2);
+  button.textContent=modelAnalysisOffset>=modelCatalog.length?'تحلیل همه مدل‌ها تکمیل شد':'تحلیل دسته بعدی ('+Math.min(25,modelCatalog.length-modelAnalysisOffset)+' مدل)';
+ }catch(error){
+  out.textContent=error.name==='AbortError'?'زمان تحلیل این دسته تمام شد؛ می‌توانید دوباره تلاش کنید.':'تحلیل مدل‌ها ناموفق بود: '+error.message;
+ }finally{
+  clearTimeout(timer);
+  button.disabled=modelAnalysisOffset>=modelCatalog.length;
+ }
+});
+
 document.getElementById('runCapability').addEventListener('click',async()=>{
  const surface=document.getElementById('surface').value;
  const out=document.getElementById('capabilityResult');
@@ -513,6 +552,11 @@ async def fix_apply(
         raise HTTPException(status_code=502, detail="AI repair publishing failed; check service logs")
 
 
+
+class AvalAIModelInspectRequest(BaseModel):
+    model_ids: list[str] = Field(min_length=1, max_length=25)
+
+
 class AvalAIExecuteRequest(BaseModel):
     payload: dict = Field(min_length=1)
 
@@ -531,6 +575,37 @@ async def avalai_capabilities(x_admin_key: str | None = Header(default=None)):
             "Multipart uploads, batch file workflows and realtime sessions need dedicated transports and are not sent through the JSON gateway.",
         ],
     }
+
+
+
+@app.post("/api/avalai/models/inspect")
+async def avalai_models_inspect(
+    request: AvalAIModelInspectRequest,
+    x_admin_key: str | None = Header(default=None),
+):
+    """Inspect a small caller-selected batch; classification is evidence-labelled."""
+    require_admin(x_admin_key)
+    try:
+        inspected = await inspect_avalai_models(request.model_ids)
+        models = [{**item, **classify_model(item)} for item in inspected]
+        return {
+            "provider": "avalai",
+            "requested": len(request.model_ids),
+            "inspected": len(models),
+            "models": models,
+            "notes": [
+                "Provider metadata is treated as verified evidence.",
+                "Model-name hints are inferred only and are not proof of capability.",
+                "A missing price is unknown, never assumed free.",
+                "Inspect at most 25 models per request to limit provider load.",
+            ],
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="AvalAI model inspection request failed")
 
 
 @app.post("/api/avalai/execute/{surface}")

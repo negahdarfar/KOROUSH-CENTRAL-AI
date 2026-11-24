@@ -8,7 +8,7 @@ from __future__ import annotations
 import httpx
 
 from .config import settings
-from .avalai import list_avalai_models
+from .avalai import list_avalai_model_catalog
 from .model_router import select_avalai_model
 
 
@@ -54,7 +54,7 @@ async def execute_avalai_surface(surface: str, payload: dict) -> dict:
 
     body = dict(payload)
     model = body.get("model")
-    catalog = await list_avalai_models()
+    catalog = await list_avalai_model_catalog()
     available = {item["id"] for item in catalog}
     if model is not None:
         if not isinstance(model, str) or not model.strip():
