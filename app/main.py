@@ -16,6 +16,7 @@ from .version import runtime_version
 from .usage_ledger import usage_summary
 from .quota_guard import list_usage_alerts
 from .tenant_routes import router as tenant_auth_router
+from .tenant_auth import TenantAuthError, authorize_tenant_inference
 
 app = FastAPI(title="KOROUSH CENTRAL AI", version="0.3.0", description="Private, audit-first GitHub engineering agent")
 app.include_router(tenant_auth_router)
@@ -713,13 +714,24 @@ async def avalai_execute(
     surface: str,
     request: AvalAIExecuteRequest,
     x_admin_key: str | None = Header(default=None),
+    x_tenant_key: str | None = Header(default=None),
 ):
-    """Execute an allow-listed AvalAI JSON capability; no arbitrary URL forwarding."""
-    require_admin(x_admin_key)
+    """Execute an allow-listed capability as admin or a repository-scoped tenant."""
+    repository = request.repository
+    if x_admin_key:
+        require_admin(x_admin_key)
+    else:
+        try:
+            identity = authorize_tenant_inference(x_tenant_key, repository)
+            repository = repository.strip().lower()
+        except TenantAuthError as exc:
+            raise HTTPException(status_code=403, detail=str(exc))
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
     if surface not in JSON_SURFACES:
         raise HTTPException(status_code=404, detail="Unknown or non-JSON AvalAI capability")
     try:
-        return await execute_avalai_surface(surface, request.payload, repository=request.repository)
+        return await execute_avalai_surface(surface, request.payload, repository=repository)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except RuntimeError as exc:
