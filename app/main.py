@@ -98,13 +98,18 @@ async def diagnostics(x_admin_key: str | None = Header(default=None)):
     except Exception:
         result["github"] = {"status": "error", "message": "GitHub API check failed; verify GITHUB_TOKEN and its permissions"}
 
-    if not settings.llm_base_url or not settings.llm_api_key or not settings.llm_model:
-        result["llm"] = {"status": "not_configured", "message": "Check LLM_BASE_URL, LLM_API_KEY and LLM_MODEL"}
+    llm = settings.active_llm
+    if not all(llm[key] for key in ("base_url", "api_key", "model")):
+        result["llm"] = {
+            "status": "not_configured",
+            "provider": llm["provider"],
+            "message": "Configure the selected provider's API key and model in Railway variables",
+        }
     else:
         try:
-            url = settings.llm_base_url.rstrip("/") + "/chat/completions"
+            url = llm["base_url"] + "/chat/completions"
             payload = {
-                "model": settings.llm_model,
+                "model": llm["model"],
                 "messages": [{"role": "user", "content": "Reply with OK"}],
                 "max_tokens": 5,
                 "temperature": 0,
@@ -112,14 +117,14 @@ async def diagnostics(x_admin_key: str | None = Header(default=None)):
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.post(
                     url,
-                    headers={"Authorization": f"Bearer {settings.llm_api_key}"},
+                    headers={"Authorization": f"Bearer {llm['api_key']}"},
                     json=payload,
                 )
                 response.raise_for_status()
                 response.json()
-            result["llm"] = {"status": "ok", "model": settings.llm_model}
+            result["llm"] = {"status": "ok", "provider": llm["provider"], "model": llm["model"]}
         except Exception:
-            result["llm"] = {"status": "error", "message": "LLM request failed; verify provider, key, model and available quota"}
+            result["llm"] = {"status": "error", "provider": llm["provider"], "message": "LLM request failed; verify provider, key, model and available quota"}
 
     return result
 
