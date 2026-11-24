@@ -148,7 +148,7 @@ Executable text agents use a central, versioned contract registry in `app/agent_
 | `koroush.text-summarizer` | `text` | 12,000 source characters |
 | `koroush.text-translator` | `text`, `target_language` | 12,000 source characters; target up to 80 characters |
 | `koroush.text-classifier` | `text`, `labels` | 12,000 source characters; 2–20 unique labels, each up to 80 characters |
-| `koroush.research-brief` | `domain`, `evidence` | 1–8 source items; 5,000 characters per item; 20,000 combined characters |
+| `koroush.research-brief` | `domain`, `evidence` | 1–8 source items; 5,000 characters per item; 20,000 combined characters; 48 KiB UTF-8 total |
 
 The stable output envelope is `{ "agent_id": "...", "output": { ... } }`. The output envelope is checked before the job result is accepted. These contracts do not expose arbitrary tools, URLs, Python modules, shell execution, provider selection, or remote plugin loading. Existing v1 requests remain compatible when the schema version is omitted.
 
@@ -159,6 +159,6 @@ Both official SDK `submit_agent` / `submitAgent` helpers pin `schema_version: 1`
 
 ## Evidence-grounded domain research brief
 
-The limited `koroush.research-brief` agent accepts `domain` (`forex`, `youtube`, `ptc`, or `nft`) and 1–8 caller-supplied evidence objects containing only `source_id` and `text`. Each excerpt is limited to 5,000 characters and the combined evidence to 20,000 characters. Source IDs must be unique. It routes through the same durable worker, tenant authorization, zero-cost guard, quota ledger, and encrypted payload lifecycle as other agents.
+The limited `koroush.research-brief` agent accepts `domain` (`forex`, `youtube`, `ptc`, or `nft`) and 1–8 caller-supplied evidence objects containing only `source_id` and `text`. Each excerpt is limited to 5,000 characters the combined evidence to 20,000 characters and 48 KiB after UTF-8 encoding. Source IDs must be unique. It routes through the same durable worker, tenant authorization, zero-cost guard, quota ledger, and encrypted payload lifecycle as other agents.
 
 The report is instructed to distinguish evidence-backed findings, cautious inferences, contradictions, and evidence gaps, and to reference only supplied source IDs. It must not invent facts, trend claims, prices, payout status, or trade instructions. The agent performs no external browsing or source verification; callers must collect and assess evidence separately. All four downstream integration profiles list this agent as a shared capability, while their high-impact operations remain blocked and profile execution remains `not-enabled`.
