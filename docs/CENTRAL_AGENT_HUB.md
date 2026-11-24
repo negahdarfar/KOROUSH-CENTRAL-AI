@@ -169,3 +169,17 @@ The report is instructed to distinguish evidence-backed findings, cautious infer
 The research input accepts optional `publisher`, `source_url`, and `observed_at` fields per evidence item. Source URLs must use HTTPS and cannot embed credentials; the service does not fetch or dereference them. Observation timestamps must be ISO-8601 with an explicit timezone. The service computes a SHA-256 fingerprint of the supplied text and labels timestamp age as fresh (up to 24 hours), recent (up to 7 days), stale, or unknown.
 
 These checks improve traceability but do not verify publisher identity, URL ownership, source authenticity, or factual accuracy. Caller-supplied timestamps can be wrong. Credibility is always reported as unverified. The agent receives the fingerprint and freshness label, not the source URL, and is instructed not to treat freshness as proof of correctness.
+
+
+## Tenant evidence provenance registry
+
+The central service exposes a metadata-only evidence registry for downstream collectors and research workflows:
+
+- `POST /api/evidence` requires tenant scopes `evidence:write` and accepts one bounded record for Forex, YouTube, PTC, or NFT.
+- `GET /api/evidence?repository=owner/repository&domain=forex` requires `evidence:read` and returns only the authenticated tenant's records.
+- Each record stores source ID, content SHA-256, character count, publisher label, source hostname, caller-supplied observation time, freshness label, and registration time.
+- The source text and full URL are deliberately not stored. Downstream agents still receive evidence text through their encrypted job payloads.
+- Repeating the same tenant/repository/domain/source ID and same content hash is idempotent. Reusing that identity with different content returns HTTP 409.
+- Evidence scopes must be explicitly granted to a tenant key; existing keys do not gain these scopes automatically.
+
+This is an evidence receipt/provenance index, not a web crawler, source-authentication service, or factual verification system. A collector remains responsible for safe retrieval and supplying truthful timestamps. URL values are validated as HTTPS but never fetched by this API.
