@@ -164,11 +164,17 @@ class GitHubClient:
                     content = base64.b64decode(payload["content"]).decode("utf-8", errors="replace")
                 except Exception:
                     continue
-                content = redact_secrets(content[:max_chars_per_file])
-                if total_chars + len(content) > 100000:
+                original_content = content[:max_chars_per_file]
+                sanitized_content = redact_secrets(original_content)
+                contains_redactions = sanitized_content != original_content
+                if total_chars + len(sanitized_content) > 100000:
                     break
-                files.append({"path": path, "content": content})
-                total_chars += len(content)
+                files.append({
+                    "path": path,
+                    "content": sanitized_content,
+                    "contains_redactions": contains_redactions,
+                })
+                total_chars += len(sanitized_content)
 
         return {
             "default_branch": inventory["default_branch"],
