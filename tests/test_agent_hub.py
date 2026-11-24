@@ -122,6 +122,7 @@ def test_registry_advertises_only_fixed_executable_text_agents():
         "koroush.text-summarizer",
         "koroush.text-translator",
         "koroush.text-classifier",
+        "koroush.research-brief",
     ):
         assert agents[agent_id]["status"] == "limited"
         assert agents[agent_id]["execution"] == "durable-job"
