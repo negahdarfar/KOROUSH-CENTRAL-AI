@@ -1,4 +1,5 @@
 import secrets
+import asyncio
 import httpx
 from fastapi import FastAPI, HTTPException, Header, Query
 from pydantic import BaseModel, Field
@@ -6,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from .config import settings
 from .github_client import GitHubClient
 from .agent import summarize_audit, generate_fix_proposal
-from .avalai import list_avalai_models
+from .avalai import list_avalai_models, list_avalai_model_catalog
 from .model_router import select_avalai_model
 from .avalai_gateway import CAPABILITY_CATALOG, JSON_SURFACES, execute_avalai_surface, AvalAIRequestError
 
@@ -91,10 +92,14 @@ document.getElementById('check').addEventListener('click',async()=>{
  if(!key){out.textContent='لطفاً کلید مدیریتی را وارد کنید.';return;}
  adminKey=key;out.textContent='در حال بررسی...';
  try{
-  const r=await fetch('/api/diagnostics',{headers:headers()});
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),40000);
+  let r;
+  try{r=await fetch('/api/diagnostics',{headers:headers(),signal:controller.signal});}
+  finally{clearTimeout(timer);}
   const data=await r.json();out.textContent=JSON.stringify(data,null,2);
   if(r.status===401){adminKey='';out.textContent='کلید پذیرفته نشد. مقدار ADMIN_API_KEY در Railway را بررسی کنید.';}
- }catch(e){out.textContent='ارتباط برقرار نشد: '+e.message;}
+ }catch(e){out.textContent=e.name==='AbortError'?'زمان بررسی تمام شد؛ سرویس یا یکی از اتصال‌های خارجی پاسخ نداد. لطفاً دوباره بعد از بررسی لاگ‌ها تلاش کنید.':'ارتباط برقرار نشد: '+e.message;}
  document.getElementById('key').value='';
 });
 document.getElementById('loadModels').addEventListener('click',async()=>{
@@ -162,8 +167,10 @@ async def diagnostics(x_admin_key: str | None = Header(default=None)):
     }
 
     try:
-        repos = await gh.list_repositories()
+        repos = await asyncio.wait_for(gh.list_repositories(), timeout=15)
         result["github"] = {"status": "ok", "repository_count": len(repos)}
+    except asyncio.TimeoutError:
+        result["github"] = {"status": "timeout", "message": "GitHub check exceeded 15 seconds"}
     except Exception:
         result["github"] = {"status": "error", "message": "GitHub API check failed; verify GITHUB_TOKEN and its permissions"}
 
@@ -179,7 +186,8 @@ async def diagnostics(x_admin_key: str | None = Header(default=None)):
         try:
             selected_model = llm["model"]
             if llm["provider"] == "avalai" and not selected_model:
-                selected_model = select_avalai_model(await list_avalai_models(), task="general")
+                catalog = await asyncio.wait_for(list_avalai_model_catalog(), timeout=15)
+                selected_model = select_avalai_model(catalog, task="general")
             url = llm["base_url"] + "/chat/completions"
             payload = {
                 "model": selected_model,
@@ -187,7 +195,7 @@ async def diagnostics(x_admin_key: str | None = Header(default=None)):
                 "max_tokens": 5,
                 "temperature": 0,
             }
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(12.0, connect=5.0)) as client:
                 response = await client.post(
                     url,
                     headers={"Authorization": f"Bearer {llm['api_key']}"},
@@ -196,6 +204,10 @@ async def diagnostics(x_admin_key: str | None = Header(default=None)):
                 response.raise_for_status()
                 response.json()
             result["llm"] = {"status": "ok", "provider": llm["provider"], "model": selected_model, "model_selection": "catalog_auto" if llm["provider"] == "avalai" and not llm["model"] else "configured"}
+        except asyncio.TimeoutError:
+            result["llm"] = {"status": "timeout", "provider": llm["provider"], "message": "AvalAI catalog check exceeded 15 seconds"}
+        except httpx.TimeoutException:
+            result["llm"] = {"status": "timeout", "provider": llm["provider"], "message": "LLM request exceeded 12 seconds"}
         except Exception:
             result["llm"] = {"status": "error", "provider": llm["provider"], "message": "LLM request failed; verify provider, key, model and available quota"}
 
