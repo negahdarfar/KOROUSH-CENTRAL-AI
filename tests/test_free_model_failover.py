@@ -54,7 +54,7 @@ def test_transient_failure_falls_back_only_to_catalog_confirmed_free_models(monk
     })
     recorded = []
     monkeypatch.setattr(agent, "_record_chat_usage",
-                        lambda repo, model, data, response, surface: recorded.append(model))
+                        lambda repo, provider, model, data, response, surface: recorded.append((provider, model)))
 
     data, response, model = asyncio.run(agent._chat_completion_with_free_failover(
         {"provider": "avalai", "api_key": "test", "base_url": "https://api.avalai.ir/v1", "model": ""},
