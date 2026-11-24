@@ -31,6 +31,12 @@ def test_key_is_hashed_and_authentication_is_team_repository_scoped(tmp_path, mo
     assert created["api_key"] not in str(list_tenant_keys())
 
 
+def test_jobs_read_scope_is_allowlisted(tmp_path, monkeypatch):
+    setup_auth(tmp_path, monkeypatch)
+    created = create_tenant_key(user_id="alice", team_id="youtube", repositories=["org/shorts"], scopes=["jobs:read"])
+    assert authenticate_tenant_key(created["api_key"])["scopes"] == ["jobs:read"]
+
+
 def test_revoked_key_is_rejected(tmp_path, monkeypatch):
     setup_auth(tmp_path, monkeypatch)
     created = create_tenant_key(user_id="bob", team_id="trading", repositories=["org/fx"])
