@@ -45,7 +45,7 @@ def configured_chat_providers(active_llm: dict, provider_order: list[str] | None
             "base_url": active_llm["base_url"].rstrip("/"),
             "api_key": active_llm["api_key"],
             "model": active_llm["model"],
-            "cost_class": "free" if active_name == "avalai" and os.getenv("KOROUSH_ACTIVE_AVALAI_MODEL_VERIFIED_FREE", "").lower() == "true" else "unknown",
+            "cost_class": "unknown",
         }
 
     candidates = (
@@ -99,6 +99,9 @@ async def chat_completion(
     """
     policy = policy or {}
     providers = configured_chat_providers(active_llm, policy.get("provider_order"))
+    # The AvalAI model was already checked against its live catalog by _resolve_model.
+    if policy.get("free_only") and providers and providers[0]["provider"] == "avalai":
+        providers[0]["cost_class"] = "free"
     if not providers:
         raise RuntimeError("No configured chat provider is available")
 
