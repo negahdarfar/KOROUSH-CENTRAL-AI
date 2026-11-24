@@ -110,6 +110,8 @@ async def api_catalog(
             continue
         if auth == "tenant:registry:read" and "registry:read" not in scopes:
             continue
+        if auth.startswith("tenant:events:") and auth.split(":")[-1] not in scopes:
+            continue
         if auth == "tenant-or-admin" and "inference:chat" not in scopes:
             continue
         visible.append(api)
