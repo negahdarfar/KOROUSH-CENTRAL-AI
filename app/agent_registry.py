@@ -101,6 +101,20 @@ _AGENTS = (
         "capabilities": ["classification", "finite-label-set", "bounded-input"],
     },
     {
+        "id": "koroush.research-brief",
+        "name": "Evidence-Grounded Domain Research Agent",
+        "category": "research",
+        "description": "Builds bounded research briefs from caller-supplied evidence for Forex, YouTube, PTC, and NFT domains.",
+        "status": "limited",
+        "contract_version": 1,
+        "execution": "durable-job",
+        "required_scopes": ["jobs:enqueue", "inference:chat"],
+        "api": "POST /api/jobs (job_type=agent.execute)",
+        "job_type": "agent.execute",
+        "agent_id": "koroush.research-brief",
+        "capabilities": ["evidence-grounded-research", "source-attribution", "bounded-input", "no-external-fetch"],
+    },
+    {
         "id": "koroush.durable-jobs",
         "name": "Durable Job Orchestrator",
         "category": "orchestration",
@@ -126,7 +140,7 @@ _AGENTS = (
 
 _CAPABILITIES = (
     {"id": "chat.completion", "status": "available", "transport": "json", "job_type": "chat.completion"},
-    {"id": "agent.execute", "status": "limited", "transport": "durable-job", "job_type": "agent.execute", "agents": ["koroush.text-summarizer", "koroush.text-translator", "koroush.text-classifier"]},
+    {"id": "agent.execute", "status": "limited", "transport": "durable-job", "job_type": "agent.execute", "agents": ["koroush.text-summarizer", "koroush.text-translator", "koroush.text-classifier", "koroush.research-brief"]},
     {"id": "github.repository.audit", "status": "available", "transport": "http", "job_type": None},
     {"id": "github.repair.preview", "status": "available", "transport": "http", "job_type": None},
     {"id": "provider.avalai.json", "status": "limited", "transport": "json", "job_type": None},
