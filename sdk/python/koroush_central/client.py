@@ -1,10 +1,17 @@
 """Minimal async SDK for tenant repositories integrating with KOROUSH CENTRAL AI."""
 from __future__ import annotations
 
+import re
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
+
+
+_REPOSITORY = re.compile(
+    r"[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?/"
+    r"[a-z0-9](?:[a-z0-9._-]{0,98}[a-z0-9])?$"
+)
 
 
 class CentralAIError(RuntimeError):
@@ -24,17 +31,22 @@ class CentralAIClient:
         client: httpx.AsyncClient | None = None,
     ) -> None:
         url = base_url.strip().rstrip("/")
-        if not url.startswith(("https://", "http://localhost", "http://127.0.0.1")):
+        parsed = urlsplit(url)
+        local_http = parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}
+        if parsed.scheme != "https" and not local_http:
             raise ValueError("Central API must use HTTPS (HTTP is allowed only for localhost)")
-        if not tenant_key or len(tenant_key) > 256:
+        if not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise ValueError("Central API base URL is invalid")
+        if not isinstance(tenant_key, str) or not tenant_key.startswith("kor_") or len(tenant_key) > 256:
             raise ValueError("A valid tenant key is required")
         repo = repository.strip().lower()
-        if repo.count("/") != 1 or any(ch.isspace() for ch in repo):
-            raise ValueError("repository must use owner/repository format")
+        if not _REPOSITORY.fullmatch(repo) or repo.endswith(".git"):
+            raise ValueError("repository must use valid owner/repository format")
         self.base_url = url
         self.repository = repo
         self._headers = {"X-Tenant-Key": tenant_key}
-        self._client = client or httpx.AsyncClient(timeout=timeout)
+        bounded_timeout = max(1.0, min(float(timeout), 120.0))
+        self._client = client or httpx.AsyncClient(timeout=bounded_timeout)
         self._owns_client = client is None
 
     async def close(self) -> None:
@@ -53,7 +65,6 @@ class CentralAIClient:
                 method, self.base_url + path, headers=self._headers, **kwargs
             )
             if response.status_code >= 400:
-                # Never include request headers or tenant credentials in exception text.
                 detail = "Central API request failed"
                 try:
                     body = response.json()
@@ -73,16 +84,14 @@ class CentralAIClient:
         return await self._request("GET", "/api/platform/manifest")
 
     async def agents(self) -> dict:
-        return await self._request(
-            "GET", "/api/agents", params={"repository": self.repository}
-        )
+        return await self._request("GET", "/api/agents", params={"repository": self.repository})
 
     async def apis(self) -> dict:
-        return await self._request(
-            "GET", "/api/apis", params={"repository": self.repository}
-        )
+        return await self._request("GET", "/api/apis", params={"repository": self.repository})
 
     async def agent(self, agent_id: str) -> dict:
+        if not isinstance(agent_id, str) or not agent_id or len(agent_id) > 128:
+            raise ValueError("agent_id must be non-empty text up to 128 characters")
         return await self._request(
             "GET", "/api/agents/" + quote(agent_id, safe=""),
             params={"repository": self.repository},
@@ -96,6 +105,14 @@ class CentralAIClient:
         idempotency_key: str,
         max_attempts: int = 5,
     ) -> dict:
+        if not isinstance(job_type, str) or not 2 <= len(job_type) <= 80:
+            raise ValueError("job_type must contain 2 to 80 characters")
+        if not isinstance(payload, dict):
+            raise ValueError("payload must be an object")
+        if not isinstance(idempotency_key, str) or not 1 <= len(idempotency_key) <= 128:
+            raise ValueError("idempotency_key must contain 1 to 128 characters")
+        if isinstance(max_attempts, bool) or not isinstance(max_attempts, int) or not 1 <= max_attempts <= 20:
+            raise ValueError("max_attempts must be an integer from 1 to 20")
         return await self._request(
             "POST", "/api/jobs",
             json={
@@ -108,6 +125,8 @@ class CentralAIClient:
         )
 
     async def job_status(self, job_id: str) -> dict:
+        if not isinstance(job_id, str) or not job_id or len(job_id) > 128:
+            raise ValueError("job_id must be non-empty text up to 128 characters")
         return await self._request(
             "GET", "/api/jobs/" + quote(job_id, safe=""),
             params={"repository": self.repository},
