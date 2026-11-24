@@ -17,9 +17,32 @@ from .usage_ledger import usage_summary
 from .quota_guard import list_usage_alerts
 from .tenant_routes import router as tenant_auth_router
 from .tenant_auth import TenantAuthError, authorize_tenant_inference
+from .alert_notifier import dispatch_usage_alerts, run_alert_worker
 
 app = FastAPI(title="KOROUSH CENTRAL AI", version="0.3.0", description="Private, audit-first GitHub engineering agent")
 app.include_router(tenant_auth_router)
+
+_alert_worker_task: asyncio.Task | None = None
+
+
+@app.on_event("startup")
+async def start_usage_alert_worker():
+    global _alert_worker_task
+    if _alert_worker_task is None or _alert_worker_task.done():
+        _alert_worker_task = asyncio.create_task(run_alert_worker())
+
+
+@app.on_event("shutdown")
+async def stop_usage_alert_worker():
+    global _alert_worker_task
+    if _alert_worker_task is not None:
+        _alert_worker_task.cancel()
+        try:
+            await _alert_worker_task
+        except asyncio.CancelledError:
+            pass
+        _alert_worker_task = None
+
 
 
 class FixProposalRequest(BaseModel):
@@ -660,6 +683,16 @@ async def usage_alert_report(
     """Return deduplicated repository quota threshold alerts (70/85/100%)."""
     require_admin(x_admin_key)
     return {"alerts": list_usage_alerts(limit=limit)}
+
+
+@app.post("/api/usage/alerts/dispatch")
+async def dispatch_usage_alert_report(
+    limit: int = Query(default=100, ge=1, le=500),
+    x_admin_key: str | None = Header(default=None),
+):
+    """Admin-triggered delivery retry; the background worker also polls automatically."""
+    require_admin(x_admin_key)
+    return await dispatch_usage_alerts(limit=limit)
 
 
 @app.get("/api/avalai/capabilities")
