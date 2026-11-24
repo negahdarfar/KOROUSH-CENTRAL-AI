@@ -45,7 +45,7 @@ def configured_chat_providers(active_llm: dict, provider_order: list[str] | None
             "base_url": active_llm["base_url"].rstrip("/"),
             "api_key": active_llm["api_key"],
             "model": active_llm["model"],
-            "cost_class": "unknown",
+            "cost_class": "free" if active_name == "avalai" and os.getenv("KOROUSH_ACTIVE_AVALAI_MODEL_VERIFIED_FREE", "").lower() == "true" else "unknown",
         }
 
     candidates = (
@@ -58,7 +58,7 @@ def configured_chat_providers(active_llm: dict, provider_order: list[str] | None
             configs[item["provider"]] = item
 
     order = []
-    for provider in [active_name, *(provider_order or [])]:
+    for provider in [*(provider_order or []), active_name]:
         provider = str(provider).strip().lower()
         if provider and provider not in order:
             order.append(provider)
