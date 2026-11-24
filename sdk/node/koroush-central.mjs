@@ -11,6 +11,8 @@ export class CentralAIError extends Error {
 }
 
 export class CentralAIClient {
+  #headers;
+
   constructor({ baseUrl, tenantKey, repository, timeoutMs = 30000, fetchImpl = globalThis.fetch }) {
     const url = String(baseUrl || "").trim().replace(/\/+$/, "");
     let parsed;
@@ -36,7 +38,7 @@ export class CentralAIClient {
     this.repository = repo;
     this.timeoutMs = Math.max(1000, Math.min(Number(timeoutMs) || 30000, 120000));
     this.fetchImpl = fetchImpl;
-    this.headers = { "X-Tenant-Key": tenantKey };
+    this.#headers = { "X-Tenant-Key": tenantKey };
   }
 
   async request(method, path, options = {}) {
@@ -52,7 +54,7 @@ export class CentralAIClient {
       const hasBody = options.body !== undefined;
       const response = await this.fetchImpl(url, {
         method,
-        headers: { ...this.headers, ...(hasBody ? { "Content-Type": "application/json" } : {}) },
+        headers: { ...this.#headers, ...(hasBody ? { "Content-Type": "application/json" } : {}) },
         ...(hasBody ? { body: JSON.stringify(options.body) } : {}),
         signal: controller.signal,
       });
@@ -110,6 +112,21 @@ export class CentralAIClient {
         idempotency_key: idempotencyKey,
         max_attempts: maxAttempts,
       },
+    });
+  }
+
+  submitAgent({ agentId, payload, idempotencyKey, maxAttempts = 5 }) {
+    if (typeof agentId !== "string" || !agentId || agentId.length > 128) {
+      throw new TypeError("agentId must be non-empty text up to 128 characters");
+    }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new TypeError("agent payload must be an object");
+    }
+    return this.submitJob({
+      jobType: "agent.execute",
+      payload: { ...payload, agent_id: agentId },
+      idempotencyKey,
+      maxAttempts,
     });
   }
 
