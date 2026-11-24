@@ -10,6 +10,7 @@ import httpx
 from .config import settings
 from .avalai import list_avalai_model_catalog
 from .model_router import rank_avalai_models
+from .usage_ledger import record_usage
 
 
 # Only fixed relative paths are allowed. Callers cannot choose arbitrary URLs.
@@ -44,7 +45,7 @@ CAPABILITY_CATALOG = [
 ]
 
 
-async def execute_avalai_surface(surface: str, payload: dict) -> dict:
+async def execute_avalai_surface(surface: str, payload: dict, repository: str | None = None) -> dict:
     """Send one JSON request to a fixed AvalAI route; never accept a caller URL."""
     if surface not in JSON_SURFACES:
         raise ValueError("Unsupported or non-JSON AvalAI capability")
@@ -91,6 +92,9 @@ async def execute_avalai_surface(surface: str, payload: dict) -> dict:
             data = response.json()
         except ValueError as exc:
             raise RuntimeError("AvalAI returned a non-JSON response on a JSON surface") from exc
+        request_id = response.headers.get("avalai-request-id") or response.headers.get("x-request-id") or data.get("id")
+        record_usage(repository=repository, provider="avalai", model=model, surface=surface,
+                     usage=data.get("usage"), provider_request_id=request_id)
         return {
             "provider": "avalai",
             "surface": surface,
