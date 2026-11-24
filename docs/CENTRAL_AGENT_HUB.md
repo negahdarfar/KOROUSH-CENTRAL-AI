@@ -102,3 +102,33 @@ The SDK does not create tenant keys. Provision each repository/team identity thr
 ## Public vs operator API discovery
 
 The public `/api/platform/manifest` deliberately omits operator-only endpoints. Authenticated tenant callers of `/api/apis` see only the tenant-safe API surface compatible with their scopes; callers with the configured `X-Admin-Key` can inspect the full operator catalog. This is discovery metadata, not a grant of access: every API still enforces its own authentication and authorization at request time.
+
+
+## First executable central text agents
+
+The durable worker currently supports two job types: `chat.completion` and `agent.execute`. The latter dispatches only to three fixed, in-process handlers; it never imports code or downloads plugins from tenant repositories:
+
+| Agent ID | Required payload fields | Purpose |
+|---|---|---|
+| `koroush.text-summarizer` | `text` | Faithful bounded text summary |
+| `koroush.text-translator` | `text`, `target_language` | Translation into a requested language |
+| `koroush.text-classifier` | `text`, `labels` (2–20 unique labels) | Classification against a finite label set |
+
+All three require a tenant key with both `jobs:enqueue` and `inference:chat`. These scopes are checked at submission and revalidated immediately before worker execution. The shared model router, zero-cost evidence checks, quota ledger, encrypted payload storage, idempotency, lease fencing, and tenant-bound result retrieval remain in force.
+
+Example job body for the summarizer:
+
+```json
+{
+  "repository": "owner/repository",
+  "job_type": "agent.execute",
+  "idempotency_key": "summary-2026-11-24-001",
+  "payload": {
+    "agent_id": "koroush.text-summarizer",
+    "text": "The source text to summarize..."
+  },
+  "max_attempts": 3
+}
+```
+
+Submit it to `POST /api/jobs` with `X-Tenant-Key`. The result is available through the existing tenant-scoped `GET /api/jobs/{job_id}` endpoint. These are initial general-purpose text agents, not yet the specialized YouTube, Forex, PTC, or NFT agents. Specialized agents must be implemented and tested as separate bounded adapters before being advertised as executable.
