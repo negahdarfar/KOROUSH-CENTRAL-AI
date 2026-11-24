@@ -61,6 +61,15 @@ def _connect() -> sqlite3.Connection:
             conn.execute(f"ALTER TABLE durable_jobs ADD COLUMN {name} {declaration}")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_jobs_repo_created ON durable_jobs(repository, created_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_jobs_tenant_status ON durable_jobs(tenant_key_id, status, created_at)")
+    conn.execute("""CREATE TABLE IF NOT EXISTS job_admin_events (
+        event_id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL,
+        repository TEXT NOT NULL,
+        action TEXT NOT NULL,
+        event_at TEXT NOT NULL,
+        manual_requeues INTEGER NOT NULL
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_job_admin_events_repo_time ON job_admin_events(repository, event_at)")
     return conn
 
 
@@ -369,6 +378,11 @@ def requeue_dead_letter_job(job_id: str, repository: str, expected_updated_at: s
             """SELECT id,repository,status,attempts,max_attempts,manual_requeues,
                       available_at,updated_at FROM durable_jobs WHERE id=?""", (job,)
         ).fetchone()
+        conn.execute(
+            """INSERT INTO job_admin_events(event_id,job_id,repository,action,event_at,manual_requeues)
+               VALUES(?,?,?,?,?,?)""",
+            (str(uuid.uuid4()), job, repo, "dead_letter_requeued", now, int(updated["manual_requeues"])),
+        )
         conn.execute("COMMIT")
         return dict(updated)
     except Exception:
