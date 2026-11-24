@@ -1,17 +1,22 @@
 import secrets
 import httpx
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Query
 from pydantic import BaseModel, Field
 from fastapi.responses import HTMLResponse
 from .config import settings
 from .github_client import GitHubClient
 from .agent import summarize_audit, generate_fix_proposal
+from .avalai import list_avalai_models
+from .avalai_gateway import CAPABILITY_CATALOG, JSON_SURFACES, execute_avalai_surface, AvalAIRequestError
 
-app = FastAPI(title="KOROUSH CENTRAL AI", version="0.2.0", description="Private, audit-first GitHub engineering agent")
+app = FastAPI(title="KOROUSH CENTRAL AI", version="0.3.0", description="Private, audit-first GitHub engineering agent")
 
 
 class FixProposalRequest(BaseModel):
     task: str = Field(min_length=8, max_length=4000)
+    model: str | None = Field(default=None, min_length=1, max_length=200)
+
+
 gh = GitHubClient()
 
 
@@ -35,8 +40,8 @@ async def panel():
 <style>
 body{font-family:system-ui;background:#101827;color:#eef2ff;max-width:680px;margin:32px auto;padding:18px}
 main{background:#1c293b;border:1px solid #34445c;border-radius:16px;padding:20px}
-input,textarea,button{box-sizing:border-box;width:100%;padding:13px;margin:8px 0;border-radius:9px;font-size:16px}
-input,textarea{background:#0d1726;color:white;border:1px solid #52647e}
+input,textarea,button,select{box-sizing:border-box;width:100%;padding:13px;margin:8px 0;border-radius:9px;font-size:16px}
+input,textarea,select{background:#0d1726;color:white;border:1px solid #52647e}
 textarea{min-height:100px}button{background:#2563eb;color:white;border:0;font-weight:700}
 pre{white-space:pre-wrap;word-break:break-word;background:#0d1726;padding:14px;border-radius:9px;min-height:50px}
 small{color:#b9c6d8}
@@ -45,6 +50,30 @@ small{color:#b9c6d8}
 <input id="key" type="password" autocomplete="off" placeholder="ADMIN_API_KEY">
 <button id="check">آزمایش اتصال GitHub و مدل هوش مصنوعی</button>
 <pre id="result">آماده آزمایش</pre>
+<hr><h3>مدل هوش مصنوعی AvalAI</h3>
+<button id="loadModels">دریافت فهرست مدل‌های مجاز حساب AvalAI</button>
+<select id="model"><option value="">مدل پیش‌فرض Railway</option></select>
+<small id="modelInfo">پس از دریافت فهرست، مدل موردنظر را انتخاب کنید. برای کارهای متنی، مدل‌های chat مناسب‌اند.</small>
+<hr><h3>درگاه چندقابلیتی AvalAI</h3>
+<p>از فهرست زیر یک API را انتخاب و بدنه JSON متناسب با مستندات همان قابلیت را ارسال کنید. مدل انتخابی باید در فهرست مجاز حساب باشد.</p>
+<select id="surface">
+<option value="responses">Responses / استدلال و چندرسانه‌ای</option>
+<option value="chat_completions">Chat Completions / چت و بینایی</option>
+<option value="decisions">Decisions / تصمیم‌گیری</option>
+<option value="systemone">System One</option>
+<option value="extraction">Extraction / استخراج داده</option>
+<option value="embeddings">Embeddings / بردارسازی</option>
+<option value="images_generations">Image Generation / تولید تصویر</option>
+<option value="audio_speech">Text to Speech / تولید گفتار</option>
+<option value="moderations">Moderation / ایمنی محتوا</option>
+<option value="rerank">Rerank / رتبه‌بندی نتایج</option>
+<option value="ocr">OCR / تشخیص متن تصویر</option>
+<option value="videos">Video / عملیات ویدئویی</option>
+</select>
+<textarea id="apiPayload">{ "input": "Hello" }</textarea>
+<button id="runCapability">اجرای API انتخاب‌شده</button>
+<pre id="capabilityResult">ابتدا مدل‌ها را بارگذاری کنید؛ سپس بدنه درخواست را مطابق مستندات تنظیم کنید.</pre>
+<p><small>قابلیت‌های صوتی ورودی، ویرایش تصویر، فایل و Batch به بارگذاری multipart یا انتقال زنده نیاز دارند و هنوز از این درگاه JSON اجرا نمی‌شوند.</small></p>
 <hr><h3>پیشنهاد اصلاح کد با هوش مصنوعی</h3>
 <input id="owner" value="negahdarfar" placeholder="GitHub owner">
 <input id="repo" placeholder="نام مخزن">
@@ -54,29 +83,68 @@ small{color:#b9c6d8}
 <small>پیشنهادها فقط نمایش داده می‌شوند؛ هیچ فایلی خودکار تغییر نمی‌کند. پس از پایان، صفحه را ببندید.</small></main>
 <script>
 let adminKey='';
+const headers=()=>({'X-Admin-Key':adminKey});
 document.getElementById('check').addEventListener('click',async()=>{
  const key=document.getElementById('key').value;
  const out=document.getElementById('result');
  if(!key){out.textContent='لطفاً کلید مدیریتی را وارد کنید.';return;}
  adminKey=key;out.textContent='در حال بررسی...';
  try{
-  const r=await fetch('/api/diagnostics',{headers:{'X-Admin-Key':adminKey}});
+  const r=await fetch('/api/diagnostics',{headers:headers()});
   const data=await r.json();out.textContent=JSON.stringify(data,null,2);
   if(r.status===401){adminKey='';out.textContent='کلید پذیرفته نشد. مقدار ADMIN_API_KEY در Railway را بررسی کنید.';}
  }catch(e){out.textContent='ارتباط برقرار نشد: '+e.message;}
  document.getElementById('key').value='';
 });
+document.getElementById('loadModels').addEventListener('click',async()=>{
+ const out=document.getElementById('modelInfo');
+ if(!adminKey){out.textContent='ابتدا اتصال را آزمایش کنید.';return;}
+ out.textContent='در حال دریافت فهرست و مشخصات مدل‌ها...';
+ try{
+  const r=await fetch('/api/avalai/models',{headers:headers()});
+  const data=await r.json();
+  if(!r.ok)throw new Error(data.detail||'خطا در دریافت مدل‌ها');
+  const select=document.getElementById('model');
+  select.innerHTML='<option value="">مدل پیش‌فرض Railway</option>';
+  for(const item of data.models){
+   const option=document.createElement('option');
+   option.value=item.id;
+   option.textContent=item.id+' — '+(item.mode||'نوع نامشخص');
+   select.appendChild(option);
+  }
+  out.textContent='تعداد مدل‌های قابل مشاهده: '+data.count+'؛ فقط مدل‌های chat برای تحلیل و پیشنهاد اصلاح متنی مناسب‌اند.';
+ }catch(e){out.textContent='دریافت فهرست مدل‌ها ناموفق بود: '+e.message;}
+});
+document.getElementById('runCapability').addEventListener('click',async()=>{
+ const surface=document.getElementById('surface').value;
+ const out=document.getElementById('capabilityResult');
+ if(!adminKey){out.textContent='ابتدا اتصال مدیریتی را آزمایش کنید.';return;}
+ let payload;
+ try{payload=JSON.parse(document.getElementById('apiPayload').value);}
+ catch(e){out.textContent='JSON نامعتبر است: '+e.message;return;}
+ const selected=document.getElementById('model').value;
+ if(selected)payload.model=selected;
+ out.textContent='در حال ارسال درخواست به AvalAI...';
+ try{
+  const r=await fetch('/api/avalai/execute/'+encodeURIComponent(surface),{
+   method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({payload})
+  });
+  const data=await r.json();out.textContent=JSON.stringify(data,null,2);
+ }catch(e){out.textContent='خطا در درخواست: '+e.message;}
+});
 document.getElementById('propose').addEventListener('click',async()=>{
  const owner=document.getElementById('owner').value.trim();
  const repo=document.getElementById('repo').value.trim();
  const task=document.getElementById('task').value.trim();
+ const model=document.getElementById('model').value;
  const out=document.getElementById('proposal');
  if(!adminKey){out.textContent='ابتدا کلید مدیریتی را وارد و اتصال را آزمایش کنید.';return;}
  if(!owner||!repo||task.length<8){out.textContent='نام مالک، مخزن و شرح درخواست را کامل کنید.';return;}
  out.textContent='در حال تحلیل کد و ساخت پیشنهاد...';
  try{
   const url='/api/fix-proposal/'+encodeURIComponent(owner)+'/'+encodeURIComponent(repo);
-  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Key':adminKey},body:JSON.stringify({task})});
+  const body={task};if(model)body.model=model;
+  const r=await fetch(url,{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify(body)});
   const data=await r.json();out.textContent=JSON.stringify(data,null,2);
  }catch(e){out.textContent='خطا در ارتباط: '+e.message;}
 });
@@ -129,6 +197,20 @@ async def diagnostics(x_admin_key: str | None = Header(default=None)):
     return result
 
 
+@app.get("/api/avalai/models")
+async def avalai_models(x_admin_key: str | None = Header(default=None)):
+    require_admin(x_admin_key)
+    try:
+        models = await list_avalai_models()
+        return {"provider": "avalai", "count": len(models), "models": models}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=502, detail=f"AvalAI catalog request failed with HTTP {exc.response.status_code}")
+    except Exception:
+        raise HTTPException(status_code=502, detail="AvalAI model catalog request failed")
+
+
 @app.get("/api/github/repos")
 async def repositories(x_admin_key: str | None = Header(default=None)):
     require_admin(x_admin_key)
@@ -139,15 +221,17 @@ async def repositories(x_admin_key: str | None = Header(default=None)):
 
 
 @app.get("/api/audit/{owner}/{repo}")
-async def audit(owner: str, repo: str, x_admin_key: str | None = Header(default=None)):
+async def audit(owner: str, repo: str, x_admin_key: str | None = Header(default=None), model: str | None = Query(default=None)):
     require_admin(x_admin_key)
     full_name = f"{owner}/{repo}"
     try:
         inventory = await gh.get_repo_snapshot(full_name)
-        report = await summarize_audit({"repository": full_name, "inventory": inventory})
-        return {"repository": full_name, "mode": "read-only", "inventory": {"default_branch": inventory["default_branch"], "truncated": inventory["truncated"], "file_count": inventory["file_count"], "files": [{"path": item["path"], "characters_analyzed": len(item["content"])} for item in inventory["files"]]}, "report_fa": report}
+        report = await summarize_audit({"repository": full_name, "inventory": inventory}, model=model)
+        return {"repository": full_name, "mode": "read-only", "model": model or settings.active_llm["model"], "inventory": {"default_branch": inventory["default_branch"], "truncated": inventory["truncated"], "file_count": inventory["file_count"], "files": [{"path": item["path"], "characters_analyzed": len(item["content"])} for item in inventory["files"]]}, "report_fa": report}
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except Exception:
         raise HTTPException(status_code=502, detail="Audit failed; check server logs")
 
@@ -164,11 +248,12 @@ async def fix_proposal(
     full_name = f"{owner}/{repo}"
     try:
         snapshot = await gh.get_repo_snapshot(full_name)
-        proposal = await generate_fix_proposal(full_name, request.task, snapshot)
+        proposal = await generate_fix_proposal(full_name, request.task, snapshot, model=request.model)
         return {
             "repository": full_name,
             "mode": "proposal-only",
             "applied": False,
+            "model": request.model or settings.active_llm["model"],
             "snapshot": {
                 "default_branch": snapshot["default_branch"],
                 "file_count": snapshot["file_count"],
@@ -184,3 +269,45 @@ async def fix_proposal(
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception:
         raise HTTPException(status_code=502, detail="Fix proposal failed; check server logs")
+
+
+class AvalAIExecuteRequest(BaseModel):
+    payload: dict = Field(min_length=1)
+
+
+@app.get("/api/avalai/capabilities")
+async def avalai_capabilities(x_admin_key: str | None = Header(default=None)):
+    """List documented API surfaces and clearly label transport requirements."""
+    require_admin(x_admin_key)
+    return {
+        "provider": "avalai",
+        "json_surfaces": len(JSON_SURFACES),
+        "capabilities": CAPABILITY_CATALOG,
+        "notes": [
+            "The catalog describes documented API routes, not proof that every route/model is enabled for this account.",
+            "Every execution is checked against the authenticated model catalog when a model ID is supplied.",
+            "Multipart uploads, batch file workflows and realtime sessions need dedicated transports and are not sent through the JSON gateway.",
+        ],
+    }
+
+
+@app.post("/api/avalai/execute/{surface}")
+async def avalai_execute(
+    surface: str,
+    request: AvalAIExecuteRequest,
+    x_admin_key: str | None = Header(default=None),
+):
+    """Execute an allow-listed AvalAI JSON capability; no arbitrary URL forwarding."""
+    require_admin(x_admin_key)
+    if surface not in JSON_SURFACES:
+        raise HTTPException(status_code=404, detail="Unknown or non-JSON AvalAI capability")
+    try:
+        return await execute_avalai_surface(surface, request.payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except AvalAIRequestError as exc:
+        raise HTTPException(status_code=502, detail={"provider_status": exc.status_code, "provider_error": exc.detail})
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="AvalAI request failed; check route, model access, quota and network")
