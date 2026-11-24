@@ -148,6 +148,7 @@ Executable text agents use a central, versioned contract registry in `app/agent_
 | `koroush.text-summarizer` | `text` | 12,000 source characters |
 | `koroush.text-translator` | `text`, `target_language` | 12,000 source characters; target up to 80 characters |
 | `koroush.text-classifier` | `text`, `labels` | 12,000 source characters; 2–20 unique labels, each up to 80 characters |
+| `koroush.research-brief` | `domain`, `evidence` | 1–8 source items; 5,000 characters per item; 20,000 combined characters |
 
 The stable output envelope is `{ "agent_id": "...", "output": { ... } }`. The output envelope is checked before the job result is accepted. These contracts do not expose arbitrary tools, URLs, Python modules, shell execution, provider selection, or remote plugin loading. Existing v1 requests remain compatible when the schema version is omitted.
 
