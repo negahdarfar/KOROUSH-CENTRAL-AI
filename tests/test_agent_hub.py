@@ -153,3 +153,21 @@ def test_platform_manifest_exposes_contract_only_source_connectors():
     assert all(item["status"] == "contract-only" for item in connectors)
     assert all(item["outbound_fetch_enabled"] is False for item in connectors)
     assert any(item["protocol"] == "youtube-data-api" for item in connectors)
+
+
+def test_extension_discovery_api_requires_registry_read_scope(monkeypatch):
+    monkeypatch.setattr(routes, "authenticate_tenant_key", lambda key: {
+        "team_id": "engineering", "repositories": ["org/repo"], "scopes": ["inference:chat"]
+    })
+    result = asyncio.run(routes.api_catalog(
+        repository="org/repo", x_tenant_key="kor_test", x_admin_key=None
+    ))
+    assert "extensions.discover" not in {item["id"] for item in result["apis"]}
+
+    monkeypatch.setattr(routes, "authenticate_tenant_key", lambda key: {
+        "team_id": "engineering", "repositories": ["org/repo"], "scopes": ["registry:read"]
+    })
+    result = asyncio.run(routes.api_catalog(
+        repository="org/repo", x_tenant_key="kor_test", x_admin_key=None
+    ))
+    assert "extensions.discover" in {item["id"] for item in result["apis"]}
