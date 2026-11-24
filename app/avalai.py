@@ -1,5 +1,6 @@
 import asyncio
 import httpx
+from urllib.parse import quote
 
 from .config import settings
 
@@ -91,7 +92,7 @@ async def inspect_avalai_models(model_ids: list[str], max_concurrency: int = 5) 
             async with semaphore:
                 try:
                     response = await client.get(
-                        f"{llm['base_url']}/models/{model_id}",
+                        f"{llm['base_url']}/models/{quote(model_id, safe='')}",
                         headers=headers,
                     )
                     if response.status_code == 404:
