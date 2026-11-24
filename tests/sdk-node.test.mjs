@@ -71,3 +71,16 @@ test("SDK validates job bounds and opaque identifiers", () => {
   assert.throws(() => client.agent(""), /agentId/);
   assert.throws(() => client.jobStatus(""), /jobId/);
 });
+
+test("SDK rejects lookalike localhost and credential-bearing API URLs", () => {
+  for (const baseUrl of [
+    "http://localhost.attacker.test",
+    "http://127.0.0.1.attacker.test",
+    "https://user:pass@central.example",
+    "https://central.example/?token=secret",
+  ]) {
+    assert.throws(() => new CentralAIClient({
+      baseUrl, tenantKey: "kor_test", repository: "org/repo",
+    }));
+  }
+});
