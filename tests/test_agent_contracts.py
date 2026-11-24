@@ -13,6 +13,7 @@ def test_every_executable_agent_exposes_a_versioned_bounded_contract():
         "koroush.text-summarizer",
         "koroush.text-translator",
         "koroush.text-classifier",
+        "koroush.research-brief",
     }
     for contract in AGENT_CONTRACTS.values():
         assert contract["version"] == 1
@@ -101,4 +102,43 @@ def test_agent_output_must_be_json_serializable_and_bounded():
         validate_agent_output(agent_id, {
             "agent_id": agent_id,
             "output": {"large": "x" * 65537},
+        })
+
+
+def test_research_brief_accepts_only_bounded_evidence_for_known_domains():
+    agent_id, payload = validate_agent_input({
+        "agent_id": "koroush.research-brief",
+        "domain": "forex",
+        "evidence": [
+            {"source_id": "report-a", "text": "EUR/USD moved higher in the cited session."},
+            {"source_id": "report-b", "text": "The source reports elevated volatility."},
+        ],
+    })
+    assert agent_id == "koroush.research-brief"
+    assert payload["schema_version"] == 1
+    assert payload["domain"] == "forex"
+    assert payload["evidence"][0]["source_id"] == "report-a"
+
+
+@pytest.mark.parametrize("payload", [
+    {"agent_id": "koroush.research-brief", "domain": "stocks", "evidence": [{"source_id": "a", "text": "x"}]},
+    {"agent_id": "koroush.research-brief", "domain": "nft", "evidence": []},
+    {"agent_id": "koroush.research-brief", "domain": "ptc", "evidence": [{"source_id": "a", "text": "x", "url": "https://example.com"}]},
+    {"agent_id": "koroush.research-brief", "domain": "youtube", "evidence": [{"source_id": "a", "text": "x"}, {"source_id": "A", "text": "y"}]},
+    {"agent_id": "koroush.research-brief", "domain": "forex", "evidence": [{"source_id": "a", "text": "x" * 5001}]},
+]) 
+def test_research_brief_rejects_invalid_or_unbounded_evidence(payload):
+    with pytest.raises(AgentContractError):
+        validate_agent_input(payload)
+
+
+def test_research_brief_rejects_combined_evidence_over_limit():
+    with pytest.raises(AgentContractError):
+        validate_agent_input({
+            "agent_id": "koroush.research-brief",
+            "domain": "nft",
+            "evidence": [
+                {"source_id": f"source-{i}", "text": "x" * 5000}
+                for i in range(5)
+            ],
         })
