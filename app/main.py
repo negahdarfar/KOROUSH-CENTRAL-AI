@@ -282,7 +282,7 @@ document.getElementById('runCapability').addEventListener('click',async()=>{
  catch(e){out.textContent='JSON نامعتبر است: '+e.message;return;}
  const selected=document.getElementById('model').value;
  const repository=document.getElementById('quotaRepo').value.trim();
- if(!/^[^/\s]+\/[^/\s]+$/.test(repository)){out.textContent='برای اعمال سهمیه، شناسه مخزن را به شکل owner/repository وارد کنید.';return;}
+ if(!/^[^/\\s]+\\/[^/\\s]+$/.test(repository)){out.textContent='برای اعمال سهمیه، شناسه مخزن را به شکل owner/repository وارد کنید.';return;}
  if(selected)payload.model=selected;
  out.textContent='در حال ارسال درخواست به AvalAI...';
  try{
