@@ -13,8 +13,16 @@ export class CentralAIError extends Error {
 export class CentralAIClient {
   constructor({ baseUrl, tenantKey, repository, timeoutMs = 30000, fetchImpl = globalThis.fetch }) {
     const url = String(baseUrl || "").trim().replace(/\/+$/, "");
-    if (!/^https:\/\//i.test(url) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(url)) {
+    let parsed;
+    try { parsed = new URL(url); } catch {
+      throw new TypeError("Central API base URL is invalid");
+    }
+    const localHttp = parsed.protocol === "http:" && ["localhost", "127.0.0.1"].includes(parsed.hostname);
+    if (parsed.protocol !== "https:" && !localHttp) {
       throw new TypeError("Central API must use HTTPS (HTTP is allowed only for localhost)");
+    }
+    if (!parsed.hostname || parsed.username || parsed.password || parsed.search || parsed.hash) {
+      throw new TypeError("Central API base URL is invalid");
     }
     if (typeof tenantKey !== "string" || !tenantKey.startsWith("kor_") || tenantKey.length > 256) {
       throw new TypeError("A valid tenant API key is required");
