@@ -6,7 +6,7 @@ import re
 import httpx
 from .config import settings
 from .avalai import list_avalai_models
-from .model_router import select_avalai_model
+from .model_router import rank_avalai_models, select_avalai_model
 from .workflow_registry import resolve_workflow_policy
 
 
@@ -18,25 +18,32 @@ async def _resolve_model(llm: dict, requested_model: str | None, *, task: str = 
         if requested_model and requested_model != llm["model"]:
             raise ValueError("Custom model selection is available only with AvalAI")
         return selected
+
     catalog = await list_avalai_models()
-    available = {item["id"] for item in catalog}
-    if requested_model:
-        if requested_model not in available:
-            raise ValueError("Requested model is not available to this AvalAI API key")
-        return requested_model
-    if llm["model"]:
-        if llm["model"] not in available:
-            raise ValueError("AVALAI_MODEL is not available to this AvalAI API key")
-        return llm["model"]
     policy = resolve_workflow_policy(repository=repository)
-    selected_task = policy.get("task") or task
-    return select_avalai_model(
+    # A repository/team policy overrides the inferred task only when it sets
+    # a non-default specialist route.
+    selected_task = policy.get("task") if policy.get("task") != "general" else task
+    eligible = rank_avalai_models(
         catalog,
         task=selected_task,
         free_only=policy.get("free_only", False),
         allow_unknown_cost=policy.get("allow_unknown_cost", True),
         allow_paid=policy.get("allow_paid", False),
     )
+    eligible_ids = {item["id"] for item in eligible}
+
+    # Explicit selections are still subject to the repository's cost policy.
+    selected = requested_model or llm["model"]
+    if selected:
+        if selected not in {item["id"] for item in catalog}:
+            raise ValueError("Requested/configured model is not available to this AvalAI API key")
+        if selected not in eligible_ids:
+            raise ValueError("Requested/configured model is blocked by this repository's model cost policy")
+        return selected
+    if not eligible:
+        raise RuntimeError("No chat-capable models are eligible under the current workflow cost policy")
+    return eligible[0]["id"]
 
 
 def editable_snapshot_paths(snapshot: dict) -> set[str]:
