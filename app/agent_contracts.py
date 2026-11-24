@@ -18,6 +18,7 @@ MAX_OUTPUT_BYTES = 64 * 1024
 MAX_RESEARCH_ITEMS = 8
 MAX_RESEARCH_ITEM_CHARS = 5_000
 MAX_RESEARCH_TOTAL_CHARS = 20_000
+MAX_RESEARCH_TOTAL_BYTES = 48 * 1024
 RESEARCH_DOMAINS = {"forex", "youtube", "ptc", "nft"}
 
 AGENT_CONTRACTS: dict[str, dict[str, Any]] = {
@@ -88,6 +89,7 @@ def validate_agent_input(payload: Any) -> tuple[str, dict[str, Any]]:
             raise AgentContractError("evidence must contain 1–8 source items")
         clean_evidence = []
         total_chars = 0
+        total_bytes = 0
         for item in evidence:
             if not isinstance(item, dict) or set(item) != {"source_id", "text"}:
                 raise AgentContractError("each evidence item must contain only source_id and text")
@@ -99,9 +101,12 @@ def validate_agent_input(payload: Any) -> tuple[str, dict[str, Any]]:
             ):
                 raise AgentContractError("evidence source_id/text is invalid or exceeds its limit")
             total_chars += len(source_text)
+            total_bytes += len(source_text.encode("utf-8"))
             clean_evidence.append({"source_id": source_id.strip(), "text": source_text})
         if total_chars > MAX_RESEARCH_TOTAL_CHARS:
             raise AgentContractError("combined evidence exceeds 20000 characters")
+        if total_bytes > MAX_RESEARCH_TOTAL_BYTES:
+            raise AgentContractError("combined UTF-8 evidence exceeds the 48 KiB limit")
         if len({item["source_id"].casefold() for item in clean_evidence}) != len(clean_evidence):
             raise AgentContractError("evidence source_id values must be unique")
         return agent_id, {
