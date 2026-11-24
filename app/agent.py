@@ -1,7 +1,6 @@
 import hashlib
 import hmac
 import json
-import logging
 import re
 
 import httpx
