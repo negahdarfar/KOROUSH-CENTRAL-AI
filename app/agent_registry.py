@@ -17,8 +17,8 @@ _AGENTS = (
         "name": "Central Model Router",
         "category": "orchestration",
         "description": "Selects an eligible model under provider, repository and cost policy.",
-        "status": "available",
-        "execution": "synchronous",
+        "status": "limited",
+        "execution": "embedded",
         "required_scopes": ["inference:chat"],
         "api": "POST /api/avalai/execute/{surface}",
         "capabilities": ["model-selection", "cost-policy", "provider-catalog"],
@@ -91,6 +91,37 @@ _CAPABILITIES = (
 )
 
 
+_API_CATALOG = (
+    {"id": "platform.manifest", "method": "GET", "path": "/api/platform/manifest", "auth": "public", "status": "available"},
+    {"id": "agents.catalog", "method": "GET", "path": "/api/agents", "auth": "tenant-or-admin", "status": "available"},
+    {"id": "agents.detail", "method": "GET", "path": "/api/agents/{agent_id}", "auth": "tenant-or-admin", "status": "available"},
+    {"id": "jobs.enqueue", "method": "POST", "path": "/api/jobs", "auth": "tenant:jobs:enqueue", "status": "available"},
+    {"id": "jobs.status", "method": "GET", "path": "/api/jobs/{job_id}", "auth": "tenant:jobs:read", "status": "available"},
+    {"id": "provider.avalai.execute", "method": "POST", "path": "/api/avalai/execute/{surface}", "auth": "tenant-or-admin", "status": "limited"},
+    {"id": "provider.avalai.models", "method": "GET", "path": "/api/avalai/models", "auth": "admin", "status": "available"},
+    {"id": "provider.avalai.inspect", "method": "POST", "path": "/api/avalai/models/inspect", "auth": "admin", "status": "available"},
+    {"id": "provider.avalai.capabilities", "method": "GET", "path": "/api/avalai/capabilities", "auth": "admin", "status": "available"},
+    {"id": "github.audit", "method": "GET", "path": "/api/audit/{owner}/{repo}", "auth": "admin", "status": "available"},
+    {"id": "github.repair.proposal", "method": "POST", "path": "/api/fix-proposal/{owner}/{repo}", "auth": "admin", "status": "available"},
+    {"id": "github.repair.preview", "method": "POST", "path": "/api/fix-preview/{owner}/{repo}", "auth": "admin", "status": "available"},
+    {"id": "github.repair.apply", "method": "POST", "path": "/api/fix-apply/{owner}/{repo}", "auth": "admin+explicit-confirmation", "status": "available"},
+    {"id": "usage.summary", "method": "GET", "path": "/api/usage", "auth": "admin", "status": "available"},
+    {"id": "usage.alerts", "method": "GET", "path": "/api/usage/alerts", "auth": "admin", "status": "available"},
+    {"id": "operations.ready", "method": "GET", "path": "/readyz", "auth": "public-health", "status": "available"},
+    {"id": "operations.jobs.summary", "method": "GET", "path": "/api/admin/jobs/summary", "auth": "admin", "status": "available"},
+    {"id": "operations.jobs.recovery", "method": "POST", "path": "/api/admin/jobs/{job_id}/requeue", "auth": "admin+explicit-confirmation", "status": "available"},
+    {"id": "operations.recovery.audit", "method": "GET", "path": "/api/admin/jobs/recovery-audit", "auth": "admin", "status": "available"},
+)
+
+
+def list_apis(*, include_admin: bool = True) -> list[dict]:
+    """Return API contract metadata without runtime credentials or request data."""
+    return [
+        deepcopy(item) for item in _API_CATALOG
+        if include_admin or item["auth"] not in {"admin", "admin+explicit-confirmation"}
+    ]
+
+
 def list_agents(*, include_operator: bool = True) -> list[dict]:
     """Return defensive copies; callers cannot mutate the process registry."""
     return [
@@ -113,6 +144,7 @@ def platform_manifest() -> dict:
         "platform_version": PLATFORM_VERSION,
         "integration_model": "central-control-plane",
         "agents": list_agents(),
+        "apis": list_apis(),
         "capabilities": [deepcopy(item) for item in _CAPABILITIES],
         "security": {
             "tenant_isolation": "repository-and-team-bound-api-keys",
