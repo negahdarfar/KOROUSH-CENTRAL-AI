@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from fastapi.responses import HTMLResponse
 from .config import settings
 from .github_client import GitHubClient
-from .agent import summarize_audit, generate_fix_proposal, generate_fix_implementation
+from .agent import summarize_audit, generate_fix_proposal, generate_fix_implementation, editable_snapshot_paths, validate_fix_implementation, build_approval_digest
 from .github_writer import publish_changes
 from .avalai import list_avalai_models, list_avalai_model_catalog
 from .model_router import select_avalai_model
@@ -24,8 +24,10 @@ class FixProposalRequest(BaseModel):
 
 class FixApplyRequest(BaseModel):
     task: str = Field(min_length=8, max_length=4000)
-    model: str | None = Field(default=None, min_length=1, max_length=200)
     confirm: bool = False
+    approved_implementation: dict | None = None
+    source_shas: dict[str, str] | None = None
+    approval_digest: str | None = Field(default=None, min_length=64, max_length=64)
 
 
 gh = GitHubClient()
@@ -108,6 +110,7 @@ small{color:#b9c6d8}
 <small>شاخه اصلی هرگز مستقیماً تغییر نمی‌کند و Pull Request به‌صورت Draft ساخته می‌شود؛ ادغام خودکار انجام نمی‌شود.</small></main>
 <script>
 let adminKey='';
+let pendingFixPreview=null;
 async function loadDeploymentVersion(){
  const status=document.getElementById('versionStatus');
  const details=document.getElementById('versionDetails');
@@ -197,29 +200,30 @@ document.getElementById('propose').addEventListener('click',async()=>{
  if(!owner||!repo||task.length<8){out.textContent='نام مالک، مخزن و شرح درخواست را کامل کنید.';return;}
  out.textContent='در حال تحلیل کد و ساخت پیشنهاد...';
  try{
-  const url='/api/fix-proposal/'+encodeURIComponent(owner)+'/'+encodeURIComponent(repo);
+  const url='/api/fix-preview/'+encodeURIComponent(owner)+'/'+encodeURIComponent(repo);
   const body={task};if(model)body.model=model;
   const r=await fetch(url,{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const data=await r.json();out.textContent=JSON.stringify(data,null,2);
+  const data=await r.json();if(!r.ok)throw new Error(data.detail||'Preview failed');
+  pendingFixPreview={repository:owner+'/'+repo,task,preview:data};
+  out.textContent=JSON.stringify(data,null,2);
+  document.getElementById('applyResult').textContent=data.approval_digest?'پیش‌نمایش آماده است؛ تمام محتوای فایل‌ها را بررسی کنید.':'تغییری برای انتشار پیشنهاد نشده است.';
  }catch(e){out.textContent='خطا در ارتباط: '+e.message;}
 });
 document.getElementById('applyFix').addEventListener('click',async()=>{
- const owner=document.getElementById('owner').value.trim();
- const repo=document.getElementById('repo').value.trim();
- const task=document.getElementById('task').value.trim();
- const model=document.getElementById('model').value;
+ const owner=document.getElementById('owner').value.trim(), repo=document.getElementById('repo').value.trim(), task=document.getElementById('task').value.trim();
  const out=document.getElementById('applyResult');
  if(!adminKey){out.textContent='ابتدا اتصال مدیریتی را آزمایش کنید.';return;}
- if(!owner||!repo||task.length<8){out.textContent='مالک، مخزن و شرح درخواست را کامل کنید.';return;}
- if(!document.getElementById('confirmApply').checked){out.textContent='برای ثبت تغییرات، تأیید صریح را فعال کنید.';return;}
- if(!confirm('اصلاحات AI روی شاخه جدید ثبت و یک Draft Pull Request ساخته شود؟'))return;
- out.textContent='در حال تولید نسخه کامل فایل‌ها و ثبت امن در شاخه جدید...';
+ if(!pendingFixPreview||pendingFixPreview.repository!==owner+'/'+repo||pendingFixPreview.task!==task){out.textContent='پیش‌نمایش با درخواست جاری مطابقت ندارد؛ پیش‌نمایش جدید بسازید.';return;}
+ const preview=pendingFixPreview.preview;
+ if(!preview.approval_digest){out.textContent='پیش‌نمایش قابل انتشار نیست یا تغییری ندارد.';return;}
+ if(!document.getElementById('confirmApply').checked){out.textContent='پس از بررسی دقیق پیش‌نمایش، تأیید را فعال کنید.';return;}
+ if(!confirm('آیا دقیقاً همین نسخه کامل فایل‌ها را تأیید می‌کنید؟'))return;
+ out.textContent='در حال بررسی نسخه مبدأ و ثبت همان پیش‌نمایش...';
  try{
-  const body={task,confirm:true};if(model)body.model=model;
-  const r=await fetch('/api/fix-apply/'+encodeURIComponent(owner)+'/'+encodeURIComponent(repo),{
-   method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify(body)
-  });
+  const body={task,confirm:true,approved_implementation:preview.implementation,source_shas:preview.source_shas,approval_digest:preview.approval_digest};
+  const r=await fetch('/api/fix-apply/'+encodeURIComponent(owner)+'/'+encodeURIComponent(repo),{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify(body)});
   const data=await r.json();out.textContent=JSON.stringify(data,null,2);
+  if(r.ok&&data.applied){pendingFixPreview=null;document.getElementById('confirmApply').checked=false;}
  }catch(e){out.textContent='خطا در اجرای اصلاح: '+e.message;}
 });
 </script></html>""")
@@ -413,6 +417,39 @@ async def fix_proposal(
         raise HTTPException(status_code=502, detail="Fix proposal failed; check server logs")
 
 
+@app.post("/api/fix-preview/{owner}/{repo}")
+async def fix_preview(owner: str, repo: str, request: FixProposalRequest, x_admin_key: str | None = Header(default=None)):
+    """Create a non-writing preview bound to exact source file versions."""
+    require_admin(x_admin_key)
+    full_name = f"{owner}/{repo}"
+    try:
+        snapshot = await gh.get_repo_snapshot(full_name)
+        implementation = await generate_fix_implementation(full_name, request.task, snapshot, model=request.model)
+        if not implementation["files"]:
+            return {"repository": full_name, "mode": "preview_only_no_changes", "applied": False, "implementation": implementation, "source_shas": {}, "approval_digest": None}
+        by_path = {item["path"]: item.get("source_sha") for item in snapshot["files"]}
+        source_shas = {}
+        for item in implementation["files"]:
+            source_sha = by_path.get(item["path"])
+            if not source_sha:
+                raise ValueError(f"Could not bind preview to current GitHub file version: {item['path']}")
+            source_shas[item["path"]] = source_sha
+        digest = build_approval_digest(full_name, request.task, implementation, source_shas)
+        return {"repository": full_name, "mode": "preview_only", "applied": False, "model": implementation["model"],
+                "snapshot": {"default_branch": snapshot["default_branch"], "file_count": snapshot["file_count"],
+                             "paths": [item["path"] for item in snapshot["files"]]},
+                "implementation": implementation, "source_shas": source_shas, "approval_digest": digest,
+                "approval_note": "Review the exact file contents; submit this unchanged preview only after approval."}
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception:
+        raise HTTPException(status_code=502, detail="Fix preview failed; check service logs")
+
+
 @app.post("/api/fix-apply/{owner}/{repo}")
 async def fix_apply(
     owner: str,
@@ -420,30 +457,33 @@ async def fix_apply(
     request: FixApplyRequest,
     x_admin_key: str | None = Header(default=None),
 ):
-    """Generate replacements and publish them on a new branch only after explicit confirmation."""
+    """Publish only the exact reviewed preview after explicit confirmation."""
     require_admin(x_admin_key)
     if request.confirm is not True:
         raise HTTPException(status_code=400, detail="Explicit confirmation is required before writing to GitHub")
+    if not request.approved_implementation or not request.source_shas or not request.approval_digest:
+        raise HTTPException(status_code=400, detail="A reviewed preview, source versions and approval digest are required")
     full_name = f"{owner}/{repo}"
     try:
         snapshot = await gh.get_repo_snapshot(full_name)
-        implementation = await generate_fix_implementation(full_name, request.task, snapshot, model=request.model)
-        if not implementation["files"]:
-            return {"repository": full_name, "applied": False, "mode": "no_changes", "implementation": implementation}
-        published = await publish_changes(
-            full_name, implementation["files"], implementation["summary"],
-            implementation["tests_to_run"], snapshot["default_branch"]
-        )
-        return {
-            "repository": full_name,
-            "applied": True,
-            "mode": "branch_and_draft_pull_request",
-            "model": implementation["model"],
-            "summary": implementation["summary"],
-            "findings": implementation["findings"],
-            "tests_to_run": implementation["tests_to_run"],
-            **published,
-        }
+        implementation = validate_fix_implementation(request.approved_implementation, editable_snapshot_paths(snapshot))
+        expected_paths = {item["path"] for item in implementation["files"]}
+        if not expected_paths or set(request.source_shas) != expected_paths:
+            raise ValueError("Approved source version map does not match reviewed files")
+        current_shas = {item["path"]: item.get("source_sha") for item in snapshot["files"]}
+        for path, approved_sha in request.source_shas.items():
+            if not approved_sha or current_shas.get(path) != approved_sha:
+                raise ValueError(f"Source file changed after preview; create a new preview: {path}")
+        digest = build_approval_digest(full_name, request.task, implementation, request.source_shas)
+        if not secrets.compare_digest(digest, request.approval_digest):
+            raise ValueError("Approval digest does not match the exact reviewed implementation")
+        for item in implementation["files"]:
+            item["source_sha"] = request.source_shas[item["path"]]
+        published = await publish_changes(full_name, implementation["files"], implementation["summary"],
+                                          implementation["tests_to_run"], snapshot["default_branch"])
+        return {"repository": full_name, "applied": True, "mode": "branch_and_draft_pull_request",
+                "model": implementation.get("model"), "summary": implementation["summary"],
+                "findings": implementation["findings"], "tests_to_run": implementation["tests_to_run"], **published}
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
     except ValueError as exc:

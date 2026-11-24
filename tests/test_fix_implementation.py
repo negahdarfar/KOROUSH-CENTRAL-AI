@@ -1,6 +1,7 @@
 import pytest
 
-from app.agent import editable_snapshot_paths, validate_fix_implementation
+from app.agent import editable_snapshot_paths, validate_fix_implementation, build_approval_digest
+from app.config import settings
 
 
 def test_implementation_accepts_only_existing_inspected_files():
@@ -52,3 +53,27 @@ def test_truncated_snapshot_files_are_never_editable():
         {"path": "large_module.py", "content": "partial", "content_truncated": True},
     ]})
     assert allowed == set()
+
+
+def test_approval_digest_binds_exact_preview_and_source_versions():
+    implementation = {"summary": "Safe update", "findings": [],
+        "files": [{"path": "app/main.py", "content": "print('approved')\\n"}],
+        "tests_to_run": ["pytest -q"], "model": "test-model"}
+    source_shas = {"app/main.py": "abc123"}
+    digest = build_approval_digest("owner/repo", "fix validation", implementation, source_shas)
+    assert digest == build_approval_digest("owner/repo", "fix validation", implementation, source_shas)
+    changed = {**implementation, "files": [{"path": "app/main.py", "content": "print('changed')\\n"}]}
+    assert digest != build_approval_digest("owner/repo", "fix validation", changed, source_shas)
+    assert digest != build_approval_digest("owner/repo", "fix validation", implementation, {"app/main.py": "newsha"})
+    assert digest != build_approval_digest("owner/repo", "different task", implementation, source_shas)
+
+def test_approval_digest_is_signed_with_admin_secret(monkeypatch):
+    implementation = {"summary": "Safe update", "findings": [],
+        "files": [{"path": "app/main.py", "content": "approved"}],
+        "tests_to_run": [], "model": "test-model"}
+    source_shas = {"app/main.py": "abc123"}
+    monkeypatch.setattr(settings, "admin_api_key", "first-admin-secret")
+    first = build_approval_digest("owner/repo", "fix validation", implementation, source_shas)
+    monkeypatch.setattr(settings, "admin_api_key", "second-admin-secret")
+    second = build_approval_digest("owner/repo", "fix validation", implementation, source_shas)
+    assert first != second
