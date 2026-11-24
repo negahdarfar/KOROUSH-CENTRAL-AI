@@ -47,13 +47,18 @@ jobs:
         if: always() && github.event_name == 'pull_request'
         uses: actions/github-script@v7
         continue-on-error: true
+        env:
+          CHECKOUT: ${{ steps.checkout.outcome }}
+          SETUP_NODE: ${{ steps.setup_node.outcome }}
+          SETUP_PYTHON: ${{ steps.setup_python.outcome }}
+          INSTALL: ${{ steps.install.outcome }}
+          COMPILE: ${{ steps.compile.outcome }}
+          PYTHON_TESTS: ${{ steps.python_tests.outcome }}
+          NODE_TESTS: ${{ steps.node_tests.outcome }}
         with:
           script: |
-            const ids = ['checkout', 'setup_node', 'setup_python', 'install', 'compile', 'python_tests', 'node_tests'];
-            const rows = ids.map(id => {
-              const step = context.payload.workflow_run?.steps?.find(s => s.name === id);
-              return `- ${id}: ${steps[id]?.outcome ?? 'not-run'}`;
-            });
+            const ids = ['CHECKOUT', 'SETUP_NODE', 'SETUP_PYTHON', 'INSTALL', 'COMPILE', 'PYTHON_TESTS', 'NODE_TESTS'];
+            const rows = ids.map(id => `- ${id.toLowerCase()}: ${process.env[id] || 'not-run'}`);
             const body = [
               '### Integrated release CI diagnostic',
               '',
