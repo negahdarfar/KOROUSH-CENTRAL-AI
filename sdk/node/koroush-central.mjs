@@ -130,6 +130,49 @@ export class CentralAIClient {
     });
   }
 
+
+  extensions({ kind } = {}) {
+    const allowed = ["agent", "model", "tool", "api", "data_source", "connector"];
+    if (kind !== undefined && !allowed.includes(kind)) throw new TypeError("unsupported extension kind");
+    return this.request("GET", "/api/extensions", { query: { repository: this.repository, kind } });
+  }
+
+  // Read-only metadata synchronization. This never installs or executes remote code.
+  syncExtensions(options = {}) { return this.extensions(options); }
+
+  publishEvent({ eventType, consumer, payload, idempotencyKey, producer = "repository-adapter",
+    schemaVersion = 1, maxAttempts = 5, correlationId, causationId }) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)
+        || typeof idempotencyKey !== "string" || !idempotencyKey || idempotencyKey.length > 128
+        || !Number.isInteger(schemaVersion) || schemaVersion < 1 || schemaVersion > 1000
+        || !Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 20) {
+      throw new TypeError("valid event payload, idempotency key, schemaVersion and maxAttempts are required");
+    }
+    return this.request("POST", "/api/events", { body: {
+      repository: this.repository, event_type: eventType, schema_version: schemaVersion,
+      producer, consumer, idempotency_key: idempotencyKey, payload,
+      max_attempts: maxAttempts, correlation_id: correlationId, causation_id: causationId,
+    } });
+  }
+
+  claimEvent({ consumer, workerId, leaseSeconds = 60 }) {
+    if (!Number.isInteger(leaseSeconds) || leaseSeconds < 10 || leaseSeconds > 3600) {
+      throw new TypeError("leaseSeconds must be from 10 to 3600");
+    }
+    return this.request("POST", "/api/events/claim", { body: {
+      repository: this.repository, consumer, worker_id: workerId, lease_seconds: leaseSeconds,
+    } });
+  }
+
+  settleEvent({ eventId, workerId, success, retryable = true }) {
+    if (typeof success !== "boolean" || typeof retryable !== "boolean") {
+      throw new TypeError("success and retryable must be booleans");
+    }
+    return this.request("POST", "/api/events/" + encodeURIComponent(eventId) + "/settle", { body: {
+      repository: this.repository, worker_id: workerId, success, retryable,
+    } });
+  }
+
   jobStatus(jobId) {
     if (typeof jobId !== "string" || !jobId || jobId.length > 128) {
       throw new TypeError("jobId must be non-empty text up to 128 characters");
