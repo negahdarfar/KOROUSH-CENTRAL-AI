@@ -32,7 +32,8 @@ def _response(status, payload=None):
     )
 
 
-def test_transient_failure_falls_back_only_to_catalog_confirmed_free_models(monkeypatch):
+def test_transient_failure_falls_back_only_to_catalog_confirmed_free_models(monkeypatch, tmp_path):
+    monkeypatch.setenv("USAGE_DB_PATH", str(tmp_path / "usage.sqlite3"))
     FakeAsyncClient.calls = []
     FakeAsyncClient.responses = [
         _response(503),
@@ -68,7 +69,8 @@ async def _async_value(value):
     return value
 
 
-def test_explicit_model_does_not_silently_switch_to_another_model(monkeypatch):
+def test_explicit_model_does_not_silently_switch_to_another_model(monkeypatch, tmp_path):
+    monkeypatch.setenv("USAGE_DB_PATH", str(tmp_path / "usage.sqlite3"))
     FakeAsyncClient.calls = []
     FakeAsyncClient.responses = [_response(503)]
     monkeypatch.setattr(agent.httpx, "AsyncClient", FakeAsyncClient)
@@ -89,7 +91,8 @@ def test_explicit_model_does_not_silently_switch_to_another_model(monkeypatch):
     assert [call["model"] for call in FakeAsyncClient.calls] == ["chosen-free"]
 
 
-def test_non_retryable_auth_error_does_not_trigger_failover(monkeypatch):
+def test_non_retryable_auth_error_does_not_trigger_failover(monkeypatch, tmp_path):
+    monkeypatch.setenv("USAGE_DB_PATH", str(tmp_path / "usage.sqlite3"))
     FakeAsyncClient.calls = []
     FakeAsyncClient.responses = [_response(401)]
     monkeypatch.setattr(agent.httpx, "AsyncClient", FakeAsyncClient)
