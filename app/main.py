@@ -1,5 +1,6 @@
 import secrets
 import asyncio
+import os
 import httpx
 from fastapi import FastAPI, HTTPException, Header, Query
 from pydantic import BaseModel, Field
@@ -20,6 +21,7 @@ from .tenant_auth import TenantAuthError, authorize_tenant_inference
 from .alert_notifier import dispatch_usage_alerts, run_alert_worker
 from .operational_health import router as operational_health_router
 from .job_routes import router as job_router
+from .worker_runtime import run_worker_loop, worker_enabled
 
 from contextlib import asynccontextmanager
 
@@ -27,15 +29,19 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Own the notification worker lifecycle using FastAPI's supported lifespan API."""
-    worker_task = asyncio.create_task(run_alert_worker())
+    alert_task = asyncio.create_task(run_alert_worker())
+    job_task = asyncio.create_task(run_worker_loop()) if worker_enabled() else None
     try:
         yield
     finally:
-        worker_task.cancel()
-        try:
-            await worker_task
-        except asyncio.CancelledError:
-            pass
+        tasks = [alert_task] + ([job_task] if job_task is not None else [])
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(
