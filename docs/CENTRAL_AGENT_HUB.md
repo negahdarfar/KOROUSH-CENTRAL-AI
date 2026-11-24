@@ -152,3 +152,5 @@ Executable text agents use a central, versioned contract registry in `app/agent_
 The stable output envelope is `{ "agent_id": "...", "output": { ... } }`. The output envelope is checked before the job result is accepted. These contracts do not expose arbitrary tools, URLs, Python modules, shell execution, provider selection, or remote plugin loading. Existing v1 requests remain compatible when the schema version is omitted.
 
 A future incompatible contract must use a new explicit version and tests; it must not silently reinterpret an existing v1 request. Consuming repositories should pin the contract version they have tested and fail closed when the central manifest advertises an unsupported version.
+
+Both official SDK `submit_agent` / `submitAgent` helpers pin `schema_version: 1` explicitly. Direct HTTP clients should also send this field to make their compatibility requirement explicit; omitting it remains supported as a v1 compatibility default.
