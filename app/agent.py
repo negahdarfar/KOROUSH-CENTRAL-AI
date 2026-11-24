@@ -9,7 +9,7 @@ def validate_fix_proposal(raw: str, allowed_paths: set[str]) -> dict:
     """Parse and constrain an AI proposal; never apply the returned diff."""
     text = raw.strip()
     if text.startswith("```"):
-        text = re.sub(r"^\```(?:json)?\s*|\s*\```$", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.IGNORECASE)
     try:
         proposal = json.loads(text)
     except (TypeError, json.JSONDecodeError) as exc:
