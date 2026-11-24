@@ -78,7 +78,9 @@ small{color:#b9c6d8}
 <hr><h3>مدل هوش مصنوعی AvalAI</h3>
 <button id="loadModels">دریافت فهرست مدل‌های مجاز حساب AvalAI</button>
 <select id="model"><option value="">مدل پیش‌فرض Railway</option></select>
-<small id="modelInfo">پس از دریافت فهرست، مدل موردنظر را انتخاب کنید. برای کارهای متنی، مدل‌های chat مناسب‌اند.</small>
+<small id="modelInfo">پس از دریافت فهرست، مدل موردنظر را انتخاب کنید. نوع و قیمت فقط پس از دریافت فراداده قابل تأیید است.</small>
+ <button id="inspectModels">تحلیل دسته بعدی مدل‌ها (حداکثر ۲۵ مدل)</button>
+ <pre id="modelAnalysis">برای بررسی قابلیت‌ها و قیمت، ابتدا فهرست مدل‌ها را بارگذاری کنید.</pre>
 <hr><h3>درگاه چندقابلیتی AvalAI</h3>
 <p>از فهرست زیر یک API را انتخاب و بدنه JSON متناسب با مستندات همان قابلیت را ارسال کنید. مدل انتخابی باید در فهرست مجاز حساب باشد.</p>
 <select id="surface">
@@ -111,7 +113,7 @@ small{color:#b9c6d8}
 <small>شاخه اصلی هرگز مستقیماً تغییر نمی‌کند و Pull Request به‌صورت Draft ساخته می‌شود؛ ادغام خودکار انجام نمی‌شود.</small></main>
 <script>
 let adminKey='';
-let pendingFixPreview=null;
+let pendingFixPreview=null;\nlet modelCatalog=[];\nlet modelAnalysisOffset=0;
 async function loadDeploymentVersion(){
  const status=document.getElementById('versionStatus');
  const details=document.getElementById('versionDetails');
@@ -175,7 +177,7 @@ document.getElementById('loadModels').addEventListener('click',async()=>{
    option.textContent=item.id;
    select.appendChild(option);
   }
-  out.textContent='تعداد مدل‌های فهرست حساب: '+data.count+'؛ این فهرست فقط شناسه مدل‌ها را نشان می‌دهد و نوع/قابلیت هر مدل از این پاسخ قابل تأیید نیست.';
+  out.textContent='تعداد مدل‌های فهرست حساب: '+data.count+'؛ برای دریافت مشخصات، دکمه تحلیل دسته‌ای را بزنید.';
  }catch(e){
   out.textContent=e.name==='AbortError'
    ?'مهلت دریافت فهرست تمام شد (۲۵ ثانیه). اتصال سرویس یا AvalAI را بررسی و دوباره تلاش کنید.'
@@ -185,7 +187,40 @@ document.getElementById('loadModels').addEventListener('click',async()=>{
   button.disabled=false;
  }
 });
-document.getElementById('runCapability').addEventListener('click',async()=>{
+
+document.getElementById('inspectModels').addEventListener('click',async()=>{
+ const out=document.getElementById('modelAnalysis');
+ const button=document.getElementById('inspectModels');
+ if(!adminKey){out.textContent='ابتدا اتصال مدیریتی را آزمایش کنید.';return;}
+ if(!modelCatalog.length){out.textContent='ابتدا فهرست مدل‌ها را بارگذاری کنید.';return;}
+ if(modelAnalysisOffset>=modelCatalog.length){out.textContent='بررسی تمام مدل‌های فهرست‌شده به پایان رسیده است.';return;}
+ const batch=modelCatalog.slice(modelAnalysisOffset,modelAnalysisOffset+25);
+ button.disabled=true;
+ out.textContent='در حال بررسی '+(modelAnalysisOffset+1)+' تا '+(modelAnalysisOffset+batch.length)+' از '+modelCatalog.length+' مدل...';
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),70000);
+ try{
+  const response=await fetch('/api/avalai/models/inspect',{
+   method:'POST',headers:{...headers(),'Content-Type':'application/json'},
+   body:JSON.stringify({model_ids:batch.map(item=>item.id)}),
+   signal:controller.signal,cache:'no-store'
+  });
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.detail||'خطا در تحلیل مدل‌ها (HTTP '+response.status+')');
+  modelAnalysisOffset+=batch.length;
+  out.textContent=JSON.stringify({
+   progress:{inspected:modelAnalysisOffset,total:modelCatalog.length,remaining:modelCatalog.length-modelAnalysisOffset},
+   results:data.models,notes:data.notes
+  },null,2);
+  button.textContent=modelAnalysisOffset>=modelCatalog.length?'تحلیل همه مدل‌ها تکمیل شد':'تحلیل دسته بعدی ('+Math.min(25,modelCatalog.length-modelAnalysisOffset)+' مدل)';
+ }catch(error){
+  out.textContent=error.name==='AbortError'?'زمان تحلیل این دسته تمام شد؛ می‌توانید دوباره تلاش کنید.':'تحلیل مدل‌ها ناموفق بود: '+error.message;
+ }finally{
+  clearTimeout(timer);
+  button.disabled=modelAnalysisOffset>=modelCatalog.length;
+ }
+});
+\ndocument.getElementById('runCapability').addEventListener('click',async()=>{
  const surface=document.getElementById('surface').value;
  const out=document.getElementById('capabilityResult');
  if(!adminKey){out.textContent='ابتدا اتصال مدیریتی را آزمایش کنید.';return;}
