@@ -12,12 +12,7 @@ from .workflow_registry import resolve_workflow_policy
 
 async def _resolve_model(llm: dict, requested_model: str | None, *, task: str = "general", repository: str | None = None) -> str:
     if llm["provider"] != "avalai":
-        selected = requested_model or llm["model"]
-        if not selected:
-            raise RuntimeError("Selected LLM provider is not fully configured")
-        if requested_model and requested_model != llm["model"]:
-            raise ValueError("Custom model selection is available only with AvalAI")
-        return selected
+        raise RuntimeError("Inference blocked by the global USD 0.00 budget: only catalog-confirmed free AvalAI models are permitted")
 
     catalog = await list_avalai_models()
     policy = resolve_workflow_policy(repository=repository)
