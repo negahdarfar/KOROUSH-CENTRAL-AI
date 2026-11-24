@@ -2,7 +2,7 @@
 from __future__ import annotations
 import asyncio, logging, os, uuid
 from .job_handlers import default_job_handlers
-from .job_payload_store import JobPayloadError, _cipher
+from .job_payload_store import JobPayloadError, _cipher, prune_expired_payloads
 from .job_worker import run_once
 from .worker_heartbeat import record_worker_heartbeat
 logger = logging.getLogger(__name__)
@@ -18,10 +18,10 @@ def worker_ready() -> bool:
     except JobPayloadError:
         return False
 
-async def _heartbeat_loop(worker_id: str) -> None:
+async def _heartbeat_loop(worker_id: str, state: dict) -> None:
     while True:
         try:
-            await asyncio.to_thread(record_worker_heartbeat, worker_id, "running")
+            await asyncio.to_thread(record_worker_heartbeat, worker_id, state["value"])
             await asyncio.sleep(15)
         except asyncio.CancelledError:
             raise
@@ -42,13 +42,22 @@ async def run_worker_loop() -> None:
     worker_id = "central-" + str(uuid.uuid4())
     handlers = default_job_handlers()
     heartbeat_task = None
+    worker_state = {"value": "starting"}
+    last_prune = 0.0
     try:
         await asyncio.to_thread(record_worker_heartbeat, worker_id, "starting")
-        heartbeat_task = asyncio.create_task(_heartbeat_loop(worker_id))
+        heartbeat_task = asyncio.create_task(_heartbeat_loop(worker_id, worker_state))
         logger.info("Durable job worker started with %d registered handler(s)", len(handlers))
         while True:
             try:
                 outcome = await run_once(worker_id, handlers, lease_seconds=120)
+                worker_state["value"] = "running"
+                now = asyncio.get_running_loop().time()
+                if now - last_prune >= 300:
+                    removed = await asyncio.to_thread(prune_expired_payloads, limit=200)
+                    if removed:
+                        logger.info("Pruned %d expired encrypted job payload(s)", removed)
+                    last_prune = now
                 if outcome == "idle": await asyncio.sleep(poll_interval)
             except asyncio.CancelledError:
                 raise
