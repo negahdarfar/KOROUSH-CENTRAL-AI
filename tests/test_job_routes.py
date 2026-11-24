@@ -13,6 +13,7 @@ def _key(monkeypatch, tmp_path, user="user-a"):
     monkeypatch.setenv("USAGE_DB_PATH", str(tmp_path / "tenant-job-api.sqlite3"))
     monkeypatch.setenv("TENANT_AUTH_PEPPER", "test-pepper-value-with-at-least-32-chars")
     monkeypatch.setenv("JOB_PAYLOAD_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    monkeypatch.setenv("JOB_WORKER_ENABLED", "true")
     return create_tenant_key(
         user_id=user, team_id="team-a", repositories=["org/repo"], scopes=["jobs:enqueue"]
     )["api_key"]
@@ -21,7 +22,7 @@ def _key(monkeypatch, tmp_path, user="user-a"):
 def test_submit_encrypts_and_returns_tenant_scoped_job_status(monkeypatch, tmp_path):
     key = _key(monkeypatch, tmp_path)
     request = JobSubmitRequest(
-        repository="org/repo", job_type="audit.run", idempotency_key="request-001",
+        repository="org/repo", job_type="chat.completion", idempotency_key="request-001",
         payload={"task": "inspect repository", "private": "payload text"},
     )
     submitted = asyncio.run(submit_job(request, x_tenant_key=key))
