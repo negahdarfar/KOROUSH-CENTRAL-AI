@@ -1,9 +1,9 @@
 name: CodeQL
 on:
   push:
-    branches: [main, 'feature/**', 'hardening/**', 'reliability/**']
+    branches: ['**']
   pull_request:
-    branches: [main, 'feature/**', 'hardening/**', 'reliability/**' ]
+    branches: ['**']
   schedule:
     - cron: '23 4 * * 1'
 permissions:
@@ -12,19 +12,18 @@ permissions:
   actions: read
 jobs:
   analyze:
-    name: Analyze Python
+    name: Analyze Python and JavaScript
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: github/codeql-action/init@v3
         with:
-          languages: python
+          languages: python,javascript-typescript
           build-mode: none
-      # Private repositories without GitHub code-scanning entitlement cannot upload SARIF.
-      # Keep the analysis running and retain its SARIF output as a workflow artifact instead.
+      # Keep SARIF as an artifact for private repositories without code-scanning upload entitlement.
       - uses: github/codeql-action/analyze@v3
         with:
-          category: '/language:python'
+          category: '/language:python-javascript'
           output: codeql-results
           upload: false
       - uses: actions/upload-artifact@v4
