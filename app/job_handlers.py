@@ -62,7 +62,6 @@ async def chat_completion_job(job: dict) -> dict[str, Any]:
         raise RuntimeError("provider returned no completion choices")
     return {
         "model": selected_model,
-        "provider": response.headers.get("x-provider-name", "verified-provider"),
         "choices": choices[:1],
         "usage": data.get("usage", {}),
         "request_id": data.get("id"),
