@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 from typing import Any
+import hashlib
+import json
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from .event_bus import EventBusError, claim_event, list_events, publish_event, settle_event
-from .job_payload_store import JobPayloadError, delete_payload, put_payload
+from .job_payload_store import JobPayloadError, delete_payload, get_payload, put_payload
 from .tenant_auth import authenticate_tenant_key
 
 router = APIRouter()
@@ -65,6 +67,7 @@ async def publish(request: PublishRequest, x_tenant_key: str | None = Header(def
             event_type=request.event_type, schema_version=request.schema_version,
             producer=request.producer, consumer=request.consumer,
             idempotency_key=request.idempotency_key, payload_ref=reference,
+            payload_hash=hashlib.sha256(json.dumps(request.payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest(),
             correlation_id=request.correlation_id, causation_id=request.causation_id,
             max_attempts=request.max_attempts)
         if result["idempotent_replay"]:
@@ -83,9 +86,12 @@ async def publish(request: PublishRequest, x_tenant_key: str | None = Header(def
 @router.post("/api/events/claim")
 async def claim(request: ClaimRequest, x_tenant_key: str | None = Header(default=None)):
     try:
-        return {"event": claim_event(identity=_tenant(x_tenant_key), repository=request.repository,
-            consumer=request.consumer, worker_id=request.worker_id, lease_seconds=request.lease_seconds)}
-    except EventBusError as exc:
+        event = claim_event(identity=_tenant(x_tenant_key), repository=request.repository,
+            consumer=request.consumer, worker_id=request.worker_id, lease_seconds=request.lease_seconds)
+        if event:
+            event["payload"] = get_payload(event["payload_ref"])
+        return {"event": event}
+    except (EventBusError, JobPayloadError) as exc:
         _error(exc)
 
 
