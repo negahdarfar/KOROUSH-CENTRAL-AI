@@ -43,4 +43,4 @@ def test_provider_adapter_configuration_does_not_expose_secret_in_metadata(monke
         ["gemini"],
     )
     assert providers[0]["provider"] == "gemini"
-    assert providers[0]["api_key"] == "do-not-leak"  # used internally for requests only
+    assert providers[0]["api_key"] == "do-not-leak"  # internal dispatch only; never serialize metadata
