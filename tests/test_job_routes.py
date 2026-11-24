@@ -15,7 +15,7 @@ def _key(monkeypatch, tmp_path, user="user-a"):
     monkeypatch.setenv("JOB_PAYLOAD_ENCRYPTION_KEY", Fernet.generate_key().decode())
     monkeypatch.setenv("JOB_WORKER_ENABLED", "true")
     return create_tenant_key(
-        user_id=user, team_id="team-a", repositories=["org/repo"], scopes=["jobs:enqueue"]
+        user_id=user, team_id="team-a", repositories=["org/repo"], scopes=["jobs:enqueue", "jobs:read"]
     )["api_key"]
 
 
@@ -51,7 +51,7 @@ def test_idempotent_retry_returns_original_job_and_does_not_leak_payload(monkeyp
             payload=payload,
         ), x_tenant_key=key))
     first = submit({"task": "first"})
-    second = submit({"task": "different retry body"})
+    second = submit({"task": "first"})
     assert second["job_id"] == first["job_id"]
     assert second["idempotent_replay"] is True
     conn = sqlite3.connect(_db_path())
@@ -61,10 +61,21 @@ def test_idempotent_retry_returns_original_job_and_does_not_leak_payload(monkeyp
         conn.close()
 
 
+def test_changed_payload_with_same_idempotency_key_is_rejected(monkeypatch, tmp_path):
+    key = _key(monkeypatch, tmp_path)
+    from fastapi import HTTPException
+    submit_job(JobSubmitRequest(repository="org/repo", job_type="chat.completion", idempotency_key="same-key", payload={"task": "first"}), x_tenant_key=key)
+    try:
+        asyncio.run(submit_job(JobSubmitRequest(repository="org/repo", job_type="chat.completion", idempotency_key="same-key", payload={"task": "changed"}), x_tenant_key=key))
+        assert False, "expected idempotency conflict"
+    except HTTPException as exc:
+        assert exc.status_code == 409
+
+
 def test_job_status_is_hidden_from_another_tenant_key(monkeypatch, tmp_path):
     key = _key(monkeypatch, tmp_path, user="user-a")
     other = create_tenant_key(
-        user_id="user-b", team_id="team-a", repositories=["org/repo"], scopes=["jobs:enqueue"]
+        user_id="user-b", team_id="team-a", repositories=["org/repo"], scopes=["jobs:enqueue", "jobs:read"]
     )["api_key"]
     submitted = asyncio.run(submit_job(JobSubmitRequest(
         repository="org/repo", job_type="chat.completion", idempotency_key="owner-only",
