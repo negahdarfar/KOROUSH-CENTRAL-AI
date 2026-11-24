@@ -43,3 +43,12 @@ Audio transcription/translation and image editing require multipart file uploads
 AvalAI API calls may consume account credit or incur charges according to the account's model pricing. The router does not send requests to every model simultaneously (which would multiply cost). It exposes every model returned by the account catalog, supports explicit model selection, and automatically chooses one available chat model when no default is configured. Repository audits and proposals are read-only. The repair workflow uses `POST /api/fix-preview/{owner}/{repo}` to produce complete replacement files and a digest bound to the task, repository, and source-file SHAs. After review, `POST /api/fix-apply/{owner}/{repo}` requires `confirm=true`, the unchanged preview, source SHAs, and matching digest. The service rechecks source SHAs before writing and uses the same GitHub content SHAs in its updates to reject concurrent source changes. It does not merge changes. Files containing detected secret redactions or truncated source content are excluded from repair candidates, preventing placeholder text or partial file snapshots from overwriting the original files.
 
 Official references: https://docs.avalai.org/en/api-reference/introduction, /images, /audio, /embeddings, /decisions, /responses.
+
+
+## Evidence-aware AvalAI model intelligence
+
+The admin panel can inspect selected account models in batches of up to 25 using `POST /api/avalai/models/inspect`. Each model detail lookup is bounded to five concurrent requests and uses a per-request timeout. The inspection endpoint first verifies every requested ID against the authenticated `/v1/models` catalog.
+
+Capability labels distinguish provider metadata (verified evidence) from model-name hints (inference). Missing pricing is reported as unknown; account tier is never treated as proof that a model is free. The panel advances through the catalog in small batches so the operator controls provider load. Inspection is metadata-only and does not run paid inference benchmarks.
+
+The JSON capability gateway validates model availability against the lightweight catalog only; it does not fetch detail metadata for all account models on every request.
