@@ -8,8 +8,6 @@ allowed by workflow policy.
 from __future__ import annotations
 
 import os
-from typing import Any
-
 import httpx
 
 
@@ -107,9 +105,10 @@ async def chat_completion(
     if not providers:
         raise RuntimeError("No configured chat provider is available")
 
+    active_name = str(active_llm.get("provider") or "").lower()
     eligible = [
-        item for index, item in enumerate(providers)
-        if _eligible(item, policy, is_primary=(index == 0))
+        item for item in providers
+        if _eligible(item, policy, is_primary=(item["provider"] == active_name))
     ]
     if not eligible:
         raise RuntimeError("No configured provider is eligible under the workflow cost policy")
@@ -132,7 +131,7 @@ async def chat_completion(
                 return data, {
                     "provider": provider["provider"],
                     "model": provider["model"],
-                    "fallback_used": index > 0,
+                    "fallback_used": provider["provider"] != active_name,
                     "attempts": index + 1,
                 }
         except Exception as exc:
