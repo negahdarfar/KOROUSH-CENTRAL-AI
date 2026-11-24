@@ -29,7 +29,7 @@ def test_tenant_job_is_bound_to_identity_and_worker_revalidates(tmp_path, monkey
         called.append((claimed["id"], claimed["payload"]))
 
     result = asyncio.run(run_once("worker-a", {"audit.run": handler},
-                                  policy_check=lambda key, repo, team: (
+                                  policy_check=lambda key, repo, team, job_type: (
                                       key == _identity()["key_id"] and repo == "org/repo" and team == "team-a"
                                   )))
     assert result == "succeeded"
