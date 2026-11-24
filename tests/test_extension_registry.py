@@ -74,3 +74,12 @@ def test_disabled_extension_is_hidden_from_tenants(tmp_path, monkeypatch):
     register_extension(manifest(status="disabled"))
     assert list_extensions(repository="negahdarfar/demo") == []
     assert len(list_extensions(include_disabled=True)) == 1
+
+
+def test_published_version_is_immutable_and_new_version_is_required(tmp_path, monkeypatch):
+    from app import extension_registry
+    monkeypatch.setattr(extension_registry, "_db_path", lambda: tmp_path / "immutable.sqlite3")
+    register_extension(manifest())
+    with pytest.raises(ExtensionRegistryError, match="immutable"):
+        register_extension(manifest(name="Changed without version bump"))
+    assert register_extension(manifest(version="1.0.1", name="Changed in a new version"))["version"] == "1.0.1"
