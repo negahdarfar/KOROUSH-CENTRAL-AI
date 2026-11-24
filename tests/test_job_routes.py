@@ -47,7 +47,7 @@ def test_idempotent_retry_returns_original_job_and_does_not_leak_payload(monkeyp
     key = _key(monkeypatch, tmp_path)
     def submit(payload):
         return asyncio.run(submit_job(JobSubmitRequest(
-            repository="org/repo", job_type="audit.run", idempotency_key="same-request",
+            repository="org/repo", job_type="chat.completion", idempotency_key="same-request",
             payload=payload,
         ), x_tenant_key=key))
     first = submit({"task": "first"})
@@ -67,7 +67,7 @@ def test_job_status_is_hidden_from_another_tenant_key(monkeypatch, tmp_path):
         user_id="user-b", team_id="team-a", repositories=["org/repo"], scopes=["jobs:enqueue"]
     )["api_key"]
     submitted = asyncio.run(submit_job(JobSubmitRequest(
-        repository="org/repo", job_type="audit.run", idempotency_key="owner-only",
+        repository="org/repo", job_type="chat.completion", idempotency_key="owner-only",
         payload={"task": "private"},
     ), x_tenant_key=key))
     from fastapi import HTTPException
@@ -88,7 +88,7 @@ def test_job_submission_requires_jobs_scope(monkeypatch, tmp_path):
     from fastapi import HTTPException
     try:
         asyncio.run(submit_job(JobSubmitRequest(
-            repository="org/repo", job_type="audit.run", idempotency_key="no-scope",
+            repository="org/repo", job_type="chat.completion", idempotency_key="no-scope",
             payload={"task": "must be rejected"},
         ), x_tenant_key=key))
         assert False, "expected scope rejection"
