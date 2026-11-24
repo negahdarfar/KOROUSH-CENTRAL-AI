@@ -5,7 +5,7 @@ import secrets
 
 from fastapi import APIRouter, Header, HTTPException, Query
 
-from .agent_registry import get_agent, list_agents, platform_manifest
+from .agent_registry import get_agent, list_agents, list_apis, platform_manifest
 from .config import settings
 from .tenant_auth import TenantAuthError, authenticate_tenant_key
 
@@ -81,3 +81,28 @@ async def agent_details(
     if not set(agent.get("required_scopes", [])).issubset(set(identity.get("scopes", []))):
         raise HTTPException(status_code=403, detail="Tenant key lacks the required agent scopes")
     return agent
+
+
+
+@router.get("/api/apis")
+async def api_catalog(
+    repository: str | None = Query(default=None, min_length=3, max_length=201),
+    x_tenant_key: str | None = Header(default=None),
+    x_admin_key: str | None = Header(default=None),
+):
+    """Discover central API contracts with authentication requirements visible."""
+    if _admin_ok(x_admin_key):
+        return {"repository": repository, "apis": list_apis(include_admin=True)}
+    identity = _tenant_identity(x_tenant_key, repository)
+    scopes = set(identity.get("scopes", []))
+    visible = []
+    for api in list_apis(include_admin=False):
+        auth = api["auth"]
+        if auth == "tenant:jobs:enqueue" and "jobs:enqueue" not in scopes:
+            continue
+        if auth == "tenant:jobs:read" and "jobs:read" not in scopes:
+            continue
+        if auth == "tenant-or-admin" and "inference:chat" not in scopes:
+            continue
+        visible.append(api)
+    return {"repository": repository.strip().lower(), "apis": visible}
