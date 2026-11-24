@@ -93,7 +93,7 @@ document.getElementById('check').addEventListener('click',async()=>{
  adminKey=key;out.textContent='در حال بررسی...';
  try{
   const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),40000);
+  const timer=setTimeout(()=>controller.abort(),50000);
   let r;
   try{r=await fetch('/api/diagnostics',{headers:headers(),signal:controller.signal});}
   finally{clearTimeout(timer);}
