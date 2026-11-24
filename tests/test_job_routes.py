@@ -89,6 +89,24 @@ def test_job_status_is_hidden_from_another_tenant_key(monkeypatch, tmp_path):
         assert exc.status_code == 404
 
 
+
+def test_job_status_requires_explicit_jobs_read_scope(monkeypatch, tmp_path):
+    owner_key = _key(monkeypatch, tmp_path, user="owner")
+    readless_key = create_tenant_key(
+        user_id="reader", team_id="team-a", repositories=["org/repo"], scopes=["jobs:enqueue"]
+    )["api_key"]
+    submitted = asyncio.run(submit_job(JobSubmitRequest(
+        repository="org/repo", job_type="chat.completion", idempotency_key="read-scope",
+        payload={"task": "private"},
+    ), x_tenant_key=owner_key))
+    from fastapi import HTTPException
+    try:
+        asyncio.run(get_job_status(submitted["job_id"], "org/repo", x_tenant_key=readless_key))
+        assert False, "expected missing jobs:read scope"
+    except HTTPException as exc:
+        assert exc.status_code == 404
+
+
 def test_job_submission_requires_jobs_scope(monkeypatch, tmp_path):
     monkeypatch.setenv("USAGE_DB_PATH", str(tmp_path / "tenant-job-api.sqlite3"))
     monkeypatch.setenv("TENANT_AUTH_PEPPER", "test-pepper-value-with-at-least-32-chars")
