@@ -4,24 +4,35 @@ on:
     branches: ['**']
   pull_request:
     branches: ['**']
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - id: checkout
+        uses: actions/checkout@v4
+      - id: setup_node
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - uses: actions/setup-python@v5
+      - id: setup_python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install -r requirements-dev.txt
-      - run: python -m compileall -q app tests sdk/python
-      - name: Run Python tests
+      - id: install
+        run: pip install -r requirements-dev.txt
+      - id: compile
+        run: python -m compileall -q app tests sdk/python
+      - id: python_tests
+        name: Run Python tests
         run: pytest -q -ra --junitxml=test-results/python-tests.xml
         env:
           PYTHONPATH: "${{ github.workspace }}:${{ github.workspace }}/sdk/python"
-      - name: Run Node SDK tests
+      - id: node_tests
+        name: Run Node SDK tests
         run: node --test tests/sdk-node.test.mjs
       - name: Upload test diagnostics
         if: always()
@@ -31,3 +42,31 @@ jobs:
           path: test-results/
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Publish CI diagnostic summary to pull request
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          script: |
+            const ids = ['checkout', 'setup_node', 'setup_python', 'install', 'compile', 'python_tests', 'node_tests'];
+            const rows = ids.map(id => {
+              const step = context.payload.workflow_run?.steps?.find(s => s.name === id);
+              return `- ${id}: ${steps[id]?.outcome ?? 'not-run'}`;
+            });
+            const body = [
+              '### Integrated release CI diagnostic',
+              '',
+              `Commit: ${context.sha}`,
+              `Run: ${context.runId}`,
+              '',
+              ...rows,
+              '',
+              'This comment reports step outcomes only; it does not override CI status.'
+            ].join('\\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
