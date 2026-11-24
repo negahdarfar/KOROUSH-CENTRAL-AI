@@ -85,7 +85,7 @@ def create_tenant_key(*, user_id: str, team_id: str, repositories: list[str],
     for repo in repos:
         if not repository_pattern.fullmatch(repo) or repo.endswith(".git"):
             raise TenantAuthError("Repositories must use valid exact GitHub owner/repository identities")
-    supported = {"inference:chat", "jobs:enqueue"}
+    supported = {"inference:chat", "jobs:enqueue", "jobs:read"}
     if not allowed_scopes or not set(allowed_scopes).issubset(supported):
         raise TenantAuthError("Unsupported or empty tenant scope")
     pepper = _pepper()
