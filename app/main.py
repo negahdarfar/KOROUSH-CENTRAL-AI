@@ -13,6 +13,7 @@ from .model_router import select_avalai_model
 from .model_intelligence import classify_model
 from .avalai_gateway import CAPABILITY_CATALOG, JSON_SURFACES, execute_avalai_surface, AvalAIRequestError
 from .version import runtime_version
+from .usage_ledger import usage_summary
 
 app = FastAPI(title="KOROUSH CENTRAL AI", version="0.3.0", description="Private, audit-first GitHub engineering agent")
 
@@ -631,6 +632,17 @@ class AvalAIModelInspectRequest(BaseModel):
 
 class AvalAIExecuteRequest(BaseModel):
     payload: dict = Field(min_length=1)
+    repository: str | None = Field(default=None, min_length=3, max_length=255)
+
+
+@app.get("/api/usage")
+async def usage_report(
+    repository: str | None = Query(default=None, min_length=3, max_length=255),
+    x_admin_key: str | None = Header(default=None),
+):
+    """Return repository-scoped daily/monthly inference token totals."""
+    require_admin(x_admin_key)
+    return usage_summary(repository=repository)
 
 
 @app.get("/api/avalai/capabilities")
@@ -691,7 +703,7 @@ async def avalai_execute(
     if surface not in JSON_SURFACES:
         raise HTTPException(status_code=404, detail="Unknown or non-JSON AvalAI capability")
     try:
-        return await execute_avalai_surface(surface, request.payload)
+        return await execute_avalai_surface(surface, request.payload, repository=request.repository)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except RuntimeError as exc:
