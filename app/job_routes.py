@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from .durable_jobs import JobQueueError, enqueue_tenant_job, tenant_job_status
 from .job_payload_store import JobPayloadError, delete_payload, get_payload, put_payload
-from .worker_runtime import worker_enabled
+from .worker_runtime import worker_ready
 from .tenant_auth import authenticate_tenant_key
 
 router = APIRouter()
@@ -44,7 +44,7 @@ async def submit_job(request: JobSubmitRequest, x_tenant_key: str | None = Heade
         raise HTTPException(status_code=403, detail="Tenant key lacks jobs:enqueue scope")
     if request.job_type != "chat.completion":
         raise HTTPException(status_code=422, detail="Only chat.completion jobs are currently supported")
-    if not worker_enabled():
+    if not worker_ready():
         raise HTTPException(status_code=503, detail="Durable job execution is disabled; enable JOB_WORKER_ENABLED after configuring the required secrets")
 
     payload_ref = None
