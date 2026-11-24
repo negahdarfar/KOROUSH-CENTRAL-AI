@@ -14,8 +14,10 @@ def configure_db(tmp_path, monkeypatch):
 def test_enqueue_is_idempotent_and_does_not_return_payload_reference(tmp_path, monkeypatch):
     configure_db(tmp_path, monkeypatch)
     first = enqueue_job("Org/Repo", "audit.run", "vault:payload-123", "request-1")
-    second = enqueue_job("org/repo", "audit.run", "vault:payload-456", "request-1")
+    second = enqueue_job("org/repo", "audit.run", "vault:payload-123", "request-1")
     assert first["id"] == second["id"]
+    with pytest.raises(JobQueueError, match="different job type or payload reference"):
+        enqueue_job("org/repo", "audit.run", "vault:payload-456", "request-1")
     assert first["status"] == "queued"
     assert "payload_ref" not in first
     assert "idempotency_key" not in first
