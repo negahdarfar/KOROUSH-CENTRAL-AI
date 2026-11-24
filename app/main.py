@@ -1,11 +1,14 @@
 import secrets
+import httpx
 from fastapi import FastAPI, HTTPException, Header
+from fastapi.responses import HTMLResponse
 from .config import settings
 from .github_client import GitHubClient
 from .agent import summarize_audit
 
-app = FastAPI(title="KOROUSH CENTRAL AI", version="0.1.1", description="Private, audit-first GitHub engineering agent")
+app = FastAPI(title="KOROUSH CENTRAL AI", version="0.2.0", description="Private, audit-first GitHub engineering agent")
 gh = GitHubClient()
+
 
 def require_admin(x_admin_key: str | None):
     if not settings.admin_api_key:
@@ -13,9 +16,86 @@ def require_admin(x_admin_key: str | None):
     if not x_admin_key or not secrets.compare_digest(x_admin_key, settings.admin_api_key):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "KOROUSH CENTRAL AI"}
+
+
+@app.get("/panel", response_class=HTMLResponse)
+async def panel():
+    return HTMLResponse("""<!doctype html>
+<html lang="fa" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KOROUSH CENTRAL AI</title>
+<style>
+body{font-family:system-ui;background:#101827;color:#eef2ff;max-width:680px;margin:32px auto;padding:18px}
+main{background:#1c293b;border:1px solid #34445c;border-radius:16px;padding:20px}
+input,button{box-sizing:border-box;width:100%;padding:13px;margin:8px 0;border-radius:9px;font-size:16px}
+input{background:#0d1726;color:white;border:1px solid #52647e}button{background:#2563eb;color:white;border:0;font-weight:700}
+pre{white-space:pre-wrap;word-break:break-word;background:#0d1726;padding:14px;border-radius:9px;min-height:50px}
+small{color:#b9c6d8}
+</style><main><h2>KOROUSH CENTRAL AI</h2>
+<p>کلید مدیریتی را فقط در همین صفحه وارد کنید. کلید ذخیره نمی‌شود و به سرویس واسطه‌ای ارسال نمی‌شود.</p>
+<input id="key" type="password" autocomplete="off" placeholder="ADMIN_API_KEY">
+<button id="check">آزمایش اتصال GitHub و مدل هوش مصنوعی</button>
+<pre id="result">آماده آزمایش</pre><small>پس از پایان، صفحه را ببندید.</small></main>
+<script>
+document.getElementById('check').addEventListener('click',async()=>{
+ const key=document.getElementById('key').value;
+ const out=document.getElementById('result');
+ if(!key){out.textContent='لطفاً کلید مدیریتی را وارد کنید.';return;}
+ out.textContent='در حال بررسی...';
+ try{
+  const r=await fetch('/api/diagnostics',{headers:{'X-Admin-Key':key}});
+  const data=await r.json();
+  out.textContent=JSON.stringify(data,null,2);
+  if(r.status===401) out.textContent='کلید پذیرفته نشد. مقدار ADMIN_API_KEY در Railway را بررسی کنید.';
+ }catch(e){out.textContent='ارتباط برقرار نشد: '+e.message;}
+ document.getElementById('key').value='';
+});
+</script></html>""")
+
+
+@app.get("/api/diagnostics")
+async def diagnostics(x_admin_key: str | None = Header(default=None)):
+    require_admin(x_admin_key)
+    result = {
+        "service": "ok",
+        "github": {"status": "not_checked"},
+        "llm": {"status": "not_checked"},
+    }
+
+    try:
+        repos = await gh.list_repositories()
+        result["github"] = {"status": "ok", "repository_count": len(repos)}
+    except Exception:
+        result["github"] = {"status": "error", "message": "GitHub API check failed; verify GITHUB_TOKEN and its permissions"}
+
+    if not settings.llm_base_url or not settings.llm_api_key or not settings.llm_model:
+        result["llm"] = {"status": "not_configured", "message": "Check LLM_BASE_URL, LLM_API_KEY and LLM_MODEL"}
+    else:
+        try:
+            url = settings.llm_base_url.rstrip("/") + "/chat/completions"
+            payload = {
+                "model": settings.llm_model,
+                "messages": [{"role": "user", "content": "Reply with OK"}],
+                "max_tokens": 5,
+                "temperature": 0,
+            }
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(
+                    url,
+                    headers={"Authorization": f"Bearer {settings.llm_api_key}"},
+                    json=payload,
+                )
+                response.raise_for_status()
+                response.json()
+            result["llm"] = {"status": "ok", "model": settings.llm_model}
+        except Exception:
+            result["llm"] = {"status": "error", "message": "LLM request failed; verify provider, key, model and available quota"}
+
+    return result
+
 
 @app.get("/api/github/repos")
 async def repositories(x_admin_key: str | None = Header(default=None)):
@@ -24,6 +104,7 @@ async def repositories(x_admin_key: str | None = Header(default=None)):
         return {"repositories": await gh.list_repositories()}
     except Exception:
         raise HTTPException(status_code=502, detail="GitHub API request failed; check server logs")
+
 
 @app.get("/api/audit/{owner}/{repo}")
 async def audit(owner: str, repo: str, x_admin_key: str | None = Header(default=None)):
