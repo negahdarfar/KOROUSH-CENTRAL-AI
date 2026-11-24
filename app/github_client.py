@@ -164,6 +164,7 @@ class GitHubClient:
                     content = base64.b64decode(payload["content"]).decode("utf-8", errors="replace")
                 except Exception:
                     continue
+                content_truncated = len(content) > max_chars_per_file
                 original_content = content[:max_chars_per_file]
                 sanitized_content = redact_secrets(original_content)
                 contains_redactions = sanitized_content != original_content
@@ -173,6 +174,7 @@ class GitHubClient:
                     "path": path,
                     "content": sanitized_content,
                     "contains_redactions": contains_redactions,
+                    "content_truncated": content_truncated,
                 })
                 total_chars += len(sanitized_content)
 
