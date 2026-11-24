@@ -114,3 +114,22 @@ def test_runtime_version_matches_agent_manifest():
     from app.agent_registry import PLATFORM_VERSION
 
     assert app.version == PLATFORM_VERSION
+
+
+
+def test_registry_advertises_only_fixed_executable_text_agents():
+    from app.agent_registry import list_agents, platform_manifest
+
+    agents = {item["id"]: item for item in list_agents()}
+    for agent_id in (
+        "koroush.text-summarizer",
+        "koroush.text-translator",
+        "koroush.text-classifier",
+    ):
+        assert agents[agent_id]["status"] == "available"
+        assert agents[agent_id]["execution"] == "durable-job"
+        assert agents[agent_id]["job_type"] == "agent.execute"
+        assert "inference:chat" in agents[agent_id]["required_scopes"]
+    assert "agent.execute" in {
+        item["id"] for item in platform_manifest()["capabilities"]
+    }
