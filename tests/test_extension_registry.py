@@ -83,3 +83,26 @@ def test_published_version_is_immutable_and_new_version_is_required(tmp_path, mo
     with pytest.raises(ExtensionRegistryError, match="immutable"):
         register_extension(manifest(name="Changed without version bump"))
     assert register_extension(manifest(version="1.0.1", name="Changed in a new version"))["version"] == "1.0.1"
+
+
+def test_manifest_validates_nested_json_schemas_and_rejects_invalid_contracts():
+    valid = {
+        "type": "object",
+        "properties": {
+            "text": {"type": "string", "minLength": 1, "maxLength": 12000}
+        },
+        "required": ["text"],
+        "additionalProperties": False,
+    }
+    assert _validate(manifest(input_schema=valid, output_schema={"type": "object"}))["input_schema"] == valid
+
+    invalid_cases = [
+        {"type": "object", "required": ["missing"]},
+        {"type": "array"},
+        {"type": "object", "properties": {"code": {"type": "python"}}},
+        {"type": "string", "minimum": 0},
+    ]
+    for schema in invalid_cases:
+        with pytest.raises(ExtensionRegistryError, match="supported bounded JSON Schema"):
+            _validate(manifest(input_schema=schema))
+
