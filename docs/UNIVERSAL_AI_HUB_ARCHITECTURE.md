@@ -97,3 +97,8 @@ This avoids editing application code for catalog additions. A new *protocol fami
 - Zero-cost policy rejects missing, expired or non-explicit price evidence.
 - SQLite persistence is not considered production durable until the actual persistent volume mount and restart recovery are verified.
 - CI and CodeQL pass on the exact candidate SHA before merge; deployment is a separate approval.
+
+
+## Live discovery intake
+
+The admin-only `POST /api/admin/discovery/search` endpoint is the bounded first live source adapter. It queries only the fixed GitHub public Search API host, rejects unsafe returned URLs, and returns candidate scores plus missing evidence. Discovery is deliberately separated from extension registration: every candidate requires administrator review, license review, official pricing verification, and explicit tenant/repository scope assignment. It does not clone, install, execute, or sync external code.
