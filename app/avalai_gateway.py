@@ -9,7 +9,8 @@ import httpx
 
 from .config import settings
 from .avalai import list_avalai_model_catalog
-from .model_router import select_avalai_model
+from .model_router import rank_avalai_models
+from .workflow_registry import resolve_workflow_policy
 
 
 # Only fixed relative paths are allowed. Callers cannot choose arbitrary URLs.
@@ -55,20 +56,24 @@ async def execute_avalai_surface(surface: str, payload: dict) -> dict:
     body = dict(payload)
     model = body.get("model")
     catalog = await list_avalai_model_catalog()
-    available = {item["id"] for item in catalog}
+    policy = resolve_workflow_policy()
+    eligible = rank_avalai_models(catalog, task="general", free_only=True, allow_unknown_cost=False, allow_paid=False)
+    eligible_ids = {item["id"] for item in eligible}
     if model is not None:
         if not isinstance(model, str) or not model.strip():
             raise ValueError("Model must be a non-empty model ID")
-        if model not in available:
-            raise ValueError("Requested model is not available to this AvalAI API key")
+        if model not in eligible_ids:
+            raise ValueError("Requested model is blocked: zero-dollar policy permits only catalog-confirmed free models")
     else:
         configured = llm.get("model")
         if configured:
-            if configured not in available:
-                raise ValueError("AVALAI_MODEL is not available to this AvalAI API key")
+            if configured not in eligible_ids:
+                raise ValueError("AVALAI_MODEL is blocked by the zero-dollar policy; clear it or choose a catalog-confirmed free model")
             model = configured
         else:
-            model = select_avalai_model(catalog, task="general")
+            if not eligible:
+                raise RuntimeError("No catalog-confirmed free chat model is available under the zero-dollar policy")
+            model = eligible[0]["id"]
         body["model"] = model
 
     route = JSON_SURFACES[surface]["path"]
