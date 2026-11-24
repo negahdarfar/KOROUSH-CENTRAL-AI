@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import json
 import re
 
@@ -225,7 +226,7 @@ async def generate_fix_implementation(repository: str, task: str, snapshot: dict
 def build_approval_digest(repository: str, task: str, implementation: dict, source_shas: dict[str, str]) -> str:
     payload = {"repository": repository, "task": task, "implementation": implementation, "source_shas": source_shas}
     canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return hmac.new(settings.admin_api_key.encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def validate_fix_implementation(result: dict, allowed_paths: set[str]) -> dict:
