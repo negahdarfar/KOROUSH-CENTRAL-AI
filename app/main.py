@@ -350,7 +350,15 @@ async def diagnostics(
 
     llm = settings.active_llm
     required = ("base_url", "api_key") if llm["provider"] == "avalai" else ("base_url", "api_key", "model")
-    if not all(llm[key] for key in required):
+    if llm["provider"] != "avalai":
+        result["llm"] = {
+            "status": "blocked_zero_budget",
+            "provider": llm["provider"],
+            "inference_executed": False,
+            "budget_usd": 0,
+            "message": "Non-AvalAI inference is disabled because its zero-cost status cannot be verified from the authenticated catalog",
+        }
+    elif not all(llm[key] for key in required):
         result["llm"] = {
             "status": "not_configured",
             "provider": llm["provider"],
