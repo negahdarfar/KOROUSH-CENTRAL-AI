@@ -143,6 +143,58 @@ class CentralAIClient:
             max_attempts=max_attempts,
         )
 
+
+    async def extensions(self, *, kind: str | None = None) -> dict:
+        """Discover versioned extension metadata; never downloads or executes code."""
+        params = {"repository": self.repository}
+        if kind is not None:
+            if not isinstance(kind, str) or kind not in {"agent", "model", "tool", "api", "data_source", "connector"}:
+                raise ValueError("unsupported extension kind")
+            params["kind"] = kind
+        return await self._request("GET", "/api/extensions", params=params)
+
+    async def sync_extensions(self, *, kind: str | None = None) -> dict:
+        """Fetch a read-only registry snapshot for caller-controlled compatibility checks."""
+        return await self.extensions(kind=kind)
+
+    async def publish_event(
+        self, *, event_type: str, consumer: str, payload: dict,
+        idempotency_key: str, producer: str = "repository-adapter",
+        schema_version: int = 1, max_attempts: int = 5,
+        correlation_id: str | None = None, causation_id: str | None = None,
+    ) -> dict:
+        if not isinstance(payload, dict):
+            raise ValueError("event payload must be an object")
+        if not isinstance(idempotency_key, str) or not 1 <= len(idempotency_key) <= 128:
+            raise ValueError("idempotency_key must contain 1 to 128 characters")
+        if isinstance(schema_version, bool) or not isinstance(schema_version, int) or not 1 <= schema_version <= 1000:
+            raise ValueError("schema_version must be an integer from 1 to 1000")
+        if isinstance(max_attempts, bool) or not isinstance(max_attempts, int) or not 1 <= max_attempts <= 20:
+            raise ValueError("max_attempts must be an integer from 1 to 20")
+        return await self._request("POST", "/api/events", json={
+            "repository": self.repository, "event_type": event_type,
+            "schema_version": schema_version, "producer": producer, "consumer": consumer,
+            "idempotency_key": idempotency_key, "payload": payload,
+            "max_attempts": max_attempts, "correlation_id": correlation_id,
+            "causation_id": causation_id,
+        })
+
+    async def claim_event(self, *, consumer: str, worker_id: str, lease_seconds: int = 60) -> dict:
+        if not isinstance(lease_seconds, int) or isinstance(lease_seconds, bool) or not 10 <= lease_seconds <= 3600:
+            raise ValueError("lease_seconds must be from 10 to 3600")
+        return await self._request("POST", "/api/events/claim", json={
+            "repository": self.repository, "consumer": consumer,
+            "worker_id": worker_id, "lease_seconds": lease_seconds,
+        })
+
+    async def settle_event(self, *, event_id: str, worker_id: str, success: bool, retryable: bool = True) -> dict:
+        if not isinstance(success, bool) or not isinstance(retryable, bool):
+            raise ValueError("success and retryable must be booleans")
+        return await self._request("POST", "/api/events/" + quote(event_id, safe="") + "/settle", json={
+            "repository": self.repository, "worker_id": worker_id,
+            "success": success, "retryable": retryable,
+        })
+
     async def job_status(self, job_id: str) -> dict:
         if not isinstance(job_id, str) or not job_id or len(job_id) > 128:
             raise ValueError("job_id must be non-empty text up to 128 characters")
