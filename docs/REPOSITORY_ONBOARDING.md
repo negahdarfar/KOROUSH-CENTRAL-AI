@@ -45,3 +45,16 @@ Centralization means shared AI services and orchestration, not moving sensitive 
 ## Current rollout state
 
 The central branch contains discovery endpoints and Python/Node SDK clients. No candidate repository has been changed by this onboarding document. Each downstream integration should be a separate, reviewable pull request. Production use remains gated on tenant-key provisioning, durable worker configuration, persistent storage, provider evidence, and deployment verification.
+
+## Versioned downstream integration profiles
+
+The public platform manifest now includes four version-1 integration profiles: `koroush.forex`, `koroush.youtube`, `koroush.ptc`, and `koroush.nft`. These are **contract-only** profiles: they document shared text-agent reuse, minimum intended scopes, allowed low-risk task categories, and explicitly blocked high-impact operations. They do not create tenant keys, grant scopes, connect accounts, or activate domain-specific execution.
+
+| Profile | Intended shared tasks | Explicitly not enabled |
+|---|---|---|
+| Forex | Research summaries, scenario classification, market-news translation | Live orders, broker access, position management |
+| YouTube | Topic research summaries, script and metadata drafts, subtitle translation | Public publishing, channel mutation, OAuth token exposure |
+| PTC | Site-review summaries, offer-risk classification, earnings-data analysis | Automated clicking, account login, CAPTCHA bypass, payouts |
+| NFT | Collection research, metadata review, valuation-report drafts | Wallet signing, on-chain transactions, marketplace listing |
+
+All profiles currently advertise `execution: not-enabled`. Domain-specific agents and downstream repository adapters must be implemented and tested in separate PRs. A profile is not proof that an operation is implemented or safe for production. The central manifest is discovery metadata, not an authorization grant; actual permissions remain enforced by repository-bound tenant keys and API scopes.
