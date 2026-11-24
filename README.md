@@ -140,3 +140,18 @@ Set Railway `ALLOWED_REPOS` to a comma-separated list of approved `owner/reposit
 ## Safe provider-adapter integration
 
 The provider adapter registry from PR19 is integrated behind the PR20 zero-dollar guard. A provider's self-declared `*_COST_CLASS=free` value is not accepted as proof of zero price. Every exact provider/model pair must be present in a trusted runtime-verified free-model evidence map before it can be dispatched. At present, that evidence is supplied only by the authenticated AvalAI model catalog; OpenRouter, FreeLLMAPI, and Gemini adapters remain configured-but-blocked until an independent zero-price verification source and tests are implemented. All permitted agent calls continue through the repository allowlist, atomic quota reservation, and usage-ledger lifecycle. No provider fallback may bypass those controls.
+
+
+## Team-scoped API keys
+
+The draft adds a separate tenant API-key layer for inference access. An administrator creates a key through `POST /api/admin/tenant-keys` using `X-Admin-Key`, with `user_id`, `team_id`, an explicit repository list, and the `inference:chat` scope. The raw key is returned once; only an HMAC-SHA256 digest is stored in SQLite. Set `TENANT_AUTH_PEPPER` to a high-entropy secret of at least 32 characters before creating or using tenant keys. Losing or rotating this pepper invalidates existing keys; plan a controlled key re-issuance process.
+
+Tenant inference uses `X-Tenant-Key` on `POST /api/avalai/execute/chat_completions`. The repository in the request must belong to that key and is still checked against the operator-controlled `ALLOWED_REPOS` allowlist and internal quota ledger. A repository can be assigned to only one team. Administrators can list key metadata at `GET /api/admin/tenant-keys` and revoke a key at `POST /api/admin/tenant-keys/{key_id}/revoke`. Raw secrets are never returned by list/revoke endpoints. The existing admin key remains required for management and all other admin endpoints.
+
+This is API-key authentication and repository-level tenant isolation, not a full interactive user identity provider: there is no password login, SSO/OIDC, MFA, invitation workflow, or fine-grained role editor in this phase. Protect `ADMIN_API_KEY` and `TENANT_AUTH_PEPPER` as production secrets. Configure the Railway Volume at `/data` before relying on key persistence.
+
+## Automatic Telegram and email quota alerts
+
+The draft includes a background worker that polls deduplicated quota threshold alerts. Telegram delivery requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Email delivery requires `SMTP_HOST`, `SMTP_FROM`, and `SMTP_TO`; optional settings are `SMTP_PORT` (default 587), `SMTP_USERNAME`, `SMTP_PASSWORD`, and `SMTP_USE_TLS` (default true). `ALERT_POLL_SECONDS` controls polling and is bounded to 15–3600 seconds.
+
+Delivery attempts are tracked in SQLite by alert ID and channel to prevent duplicate sends; failed attempts can be retried on a later worker cycle. The admin-only `POST /api/usage/alerts/dispatch` endpoint also triggers a delivery pass. No credentials are required if notifications are not enabled; in that case the worker remains idle. Secrets are read from environment variables and are not exposed by status responses. Delivery depends on Telegram/SMTP availability and provider policies; it is not a guaranteed emergency paging service.
