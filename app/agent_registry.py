@@ -91,6 +91,14 @@ _CAPABILITIES = (
 )
 
 
+
+_PROVIDER_CATALOG = (
+    {"id": "avalai", "status": "limited", "adapter": "app/avalai.py", "note": "Authenticated catalog and allow-listed JSON gateway; account access and route support vary."},
+    {"id": "openrouter", "status": "planned", "adapter": None, "note": "Must use exact model/provider price evidence and enforce the global zero-cost guard."},
+    {"id": "freellmapi", "status": "planned", "adapter": None, "note": "Must verify upstream model/provider pricing; a free endpoint label alone is not proof."},
+    {"id": "gemini", "status": "planned", "adapter": None, "note": "Dedicated adapter, quota policy, and evidence-backed price/capability metadata are required."},
+)
+
 _API_CATALOG = (
     {"id": "platform.manifest", "method": "GET", "path": "/api/platform/manifest", "auth": "public", "status": "available"},
     {"id": "agents.catalog", "method": "GET", "path": "/api/agents", "auth": "tenant-or-admin", "status": "available"},
@@ -145,6 +153,7 @@ def platform_manifest() -> dict:
         "integration_model": "central-control-plane",
         "agents": list_agents(),
         "apis": list_apis(),
+        "providers": [deepcopy(item) for item in _PROVIDER_CATALOG],
         "capabilities": [deepcopy(item) for item in _CAPABILITIES],
         "security": {
             "tenant_isolation": "repository-and-team-bound-api-keys",
