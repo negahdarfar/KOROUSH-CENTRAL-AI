@@ -33,13 +33,16 @@ def _connect():
         producer TEXT NOT NULL, consumer TEXT NOT NULL, correlation_id TEXT,
         causation_id TEXT, idempotency_key TEXT NOT NULL, payload_ref TEXT NOT NULL,
         status TEXT NOT NULL CHECK(status IN ('queued','leased','delivered','dead_letter')),
-        attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL, payload_hash TEXT,
         available_at TEXT NOT NULL, lease_owner TEXT, lease_until TEXT,
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
         UNIQUE(tenant_key_id, repository, consumer, idempotency_key)
     )""")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_platform_events_claim ON platform_events(status,consumer,available_at,lease_until)")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_platform_events_tenant ON platform_events(tenant_key_id,repository,created_at)")
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(platform_events)").fetchall()}
+    if "payload_hash" not in columns:
+        conn.execute("ALTER TABLE platform_events ADD COLUMN payload_hash TEXT")
     return conn
 
 
@@ -64,7 +67,7 @@ def _identity(identity, repository, scope):
 
 
 def publish_event(*, identity, repository, event_type, schema_version, producer,
-                  consumer, idempotency_key, payload_ref, correlation_id=None,
+                  consumer, idempotency_key, payload_ref, payload_hash, correlation_id=None,
                   causation_id=None, max_attempts=5):
     repo = _identity(identity, repository, "events:publish")
     kind = _text(event_type, "event_type", 120, r"[a-z][a-z0-9_.-]{1,119}")
@@ -72,6 +75,7 @@ def publish_event(*, identity, repository, event_type, schema_version, producer,
     target = _text(consumer, "consumer", 120, r"[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,119}")
     idem = _text(idempotency_key, "idempotency_key", 128, r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
     ref = _text(payload_ref, "payload_ref", 64, r"vault:[0-9a-f-]{36}")
+    digest = _text(payload_hash, "payload_hash", 64, r"[a-f0-9]{64}")
     if isinstance(schema_version, bool) or not isinstance(schema_version, int) or not 1 <= schema_version <= 1000:
         raise EventBusError("schema_version must be an integer from 1 to 1000")
     if isinstance(max_attempts, bool) or not isinstance(max_attempts, int) or not 1 <= max_attempts <= 20:
@@ -87,17 +91,17 @@ def publish_event(*, identity, repository, event_type, schema_version, producer,
             (identity["key_id"], repo, target, idem)).fetchone()
         replay = row is not None
         if row:
-            if row["event_type"] != kind or row["payload_ref"] != ref or row["producer"] != source:
+            if row["event_type"] != kind or row["payload_hash"] != digest or row["producer"] != source:
                 raise EventBusError("idempotency key conflicts with an existing event")
         else:
             event_id = str(uuid.uuid4())
             conn.execute("""INSERT INTO platform_events
               (event_id,tenant_key_id,team_id,repository,event_type,schema_version,producer,consumer,
-               correlation_id,causation_id,idempotency_key,payload_ref,status,attempts,max_attempts,
+               correlation_id,causation_id,idempotency_key,payload_ref,status,attempts,max_attempts,payload_hash,
                available_at,created_at,updated_at)
-              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'queued',0,?,?,?,?)""",
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'queued',0,?,?,?,?,?)""",
               (event_id, identity["key_id"], identity["team_id"], repo, kind, schema_version,
-               source, target, correlation, causation, idem, ref, max_attempts, now, now, now))
+               source, target, correlation, causation, idem, ref, max_attempts, digest, now, now, now))
             row = conn.execute("SELECT * FROM platform_events WHERE event_id=?", (event_id,)).fetchone()
         conn.execute("COMMIT")
         return {"event_id": row["event_id"], "status": row["status"], "idempotent_replay": replay,
