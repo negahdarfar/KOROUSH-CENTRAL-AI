@@ -9,6 +9,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 from .integration_profiles import list_integration_profiles
+from .source_connector_catalog import list_connectors
 
 PLATFORM_VERSION = "0.4.0"
 MANIFEST_VERSION = "1.0"
@@ -228,6 +229,7 @@ def platform_manifest() -> dict:
         "integrations": list_integration_profiles(),
         "apis": list_apis(include_admin=False),
         "providers": [deepcopy(item) for item in _PROVIDER_CATALOG],
+        "source_connectors": list_connectors(),
         "capabilities": [deepcopy(item) for item in _CAPABILITIES],
         "security": {
             "tenant_isolation": "repository-and-team-bound-api-keys",
