@@ -1,4 +1,5 @@
 import asyncio
+import sqlite3
 
 import pytest
 from fastapi import HTTPException
@@ -34,6 +35,12 @@ def test_requeue_dead_letter_requires_matching_version_and_live_payload(tmp_path
     assert result["status"] == "queued"
     assert result["attempts"] == 0
     assert result["manual_requeues"] == 1
+    conn = sqlite3.connect(str(tmp_path / "jobs-recovery.sqlite3"))
+    try:
+        event = conn.execute("SELECT job_id,repository,action,manual_requeues FROM job_admin_events").fetchone()
+        assert event == (job_id, "org/repo", "dead_letter_requeued", 1)
+    finally:
+        conn.close()
 
 
 def test_dead_letter_requeue_is_bounded_to_three(tmp_path, monkeypatch):
