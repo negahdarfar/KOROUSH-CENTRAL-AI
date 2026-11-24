@@ -15,7 +15,7 @@ def _key(monkeypatch, tmp_path, user="user-a"):
     monkeypatch.setenv("JOB_PAYLOAD_ENCRYPTION_KEY", Fernet.generate_key().decode())
     monkeypatch.setenv("JOB_WORKER_ENABLED", "true")
     return create_tenant_key(
-        user_id=user, team_id="team-a", repositories=["org/repo"], scopes=["jobs:enqueue", "jobs:read"]
+        user_id=user, team_id="team-a", repositories=["org/repo"], scopes=["jobs:enqueue", "jobs:read", "inference:chat"]
     )["api_key"]
 
 
@@ -93,7 +93,7 @@ def test_job_status_is_hidden_from_another_tenant_key(monkeypatch, tmp_path):
 def test_job_status_requires_explicit_jobs_read_scope(monkeypatch, tmp_path):
     owner_key = _key(monkeypatch, tmp_path, user="owner")
     readless_key = create_tenant_key(
-        user_id="reader", team_id="team-a", repositories=["org/repo"], scopes=["jobs:enqueue"]
+        user_id="reader", team_id="team-a", repositories=["org/repo"], scopes=["jobs:enqueue", "inference:chat"]
     )["api_key"]
     submitted = asyncio.run(submit_job(JobSubmitRequest(
         repository="org/repo", job_type="chat.completion", idempotency_key="read-scope",
