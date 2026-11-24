@@ -102,6 +102,9 @@ _PROVIDER_CATALOG = (
 _API_CATALOG = (
     {"id": "health.status", "method": "GET", "path": "/health", "auth": "public-health", "status": "available"},
     {"id": "runtime.version", "method": "GET", "path": "/api/version", "auth": "public-health", "status": "available"},
+    {"id": "tenant.keys.create", "method": "POST", "path": "/api/admin/tenant-keys", "auth": "admin", "status": "available"},
+    {"id": "tenant.keys.list", "method": "GET", "path": "/api/admin/tenant-keys", "auth": "admin", "status": "available"},
+    {"id": "tenant.keys.revoke", "method": "POST", "path": "/api/admin/tenant-keys/{key_id}/revoke", "auth": "admin", "status": "available"},
     {"id": "admin.diagnostics", "method": "GET", "path": "/api/diagnostics", "auth": "admin", "status": "available"},
     {"id": "admin.github.repositories", "method": "GET", "path": "/api/github/repos", "auth": "admin", "status": "available"},
     {"id": "usage.alerts.dispatch", "method": "POST", "path": "/api/usage/alerts/dispatch", "auth": "admin", "status": "available"},
