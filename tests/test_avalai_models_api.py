@@ -29,22 +29,13 @@ async def test_avalai_models_uses_lightweight_catalog_only(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_avalai_models_returns_gateway_timeout(monkeypatch):
-    async def slow_catalog():
-        await asyncio.sleep(0.05)
-        return []
+    async def timed_out_catalog():
+        raise asyncio.TimeoutError
 
     monkeypatch.setattr(main.settings, "admin_api_key", "test-secret")
-    monkeypatch.setattr(main, "list_avalai_model_catalog", slow_catalog)
-
-    monkeypatch.setattr(main.asyncio, "wait_for", lambda awaitable, timeout: _raise_timeout(awaitable))
+    monkeypatch.setattr(main, "list_avalai_model_catalog", timed_out_catalog)
 
     with pytest.raises(HTTPException) as exc:
         await main.avalai_models("test-secret")
 
     assert exc.value.status_code == 504
-
-
-async def _raise_timeout(awaitable):
-    if hasattr(awaitable, "close"):
-        awaitable.close()
-    raise asyncio.TimeoutError
