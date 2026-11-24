@@ -176,6 +176,8 @@ _API_CATALOG = (
     {"id": "agents.detail", "method": "GET", "path": "/api/agents/{agent_id}", "auth": "tenant-or-admin", "status": "available"},
     {"id": "jobs.enqueue", "method": "POST", "path": "/api/jobs", "auth": "tenant:jobs:enqueue+inference:chat", "status": "available"},
     {"id": "jobs.status", "method": "GET", "path": "/api/jobs/{job_id}", "auth": "tenant:jobs:read", "status": "available"},
+    {"id": "evidence.register", "method": "POST", "path": "/api/evidence", "auth": "tenant:evidence:write", "status": "available", "stores": "metadata-only"},
+    {"id": "evidence.list", "method": "GET", "path": "/api/evidence", "auth": "tenant:evidence:read", "status": "available", "stores": "metadata-only"},
     {"id": "provider.avalai.execute", "method": "POST", "path": "/api/avalai/execute/{surface}", "auth": "tenant-or-admin", "status": "limited"},
     {"id": "provider.avalai.models", "method": "GET", "path": "/api/avalai/models", "auth": "admin", "status": "available"},
     {"id": "provider.avalai.inspect", "method": "POST", "path": "/api/avalai/models/inspect", "auth": "admin", "status": "available"},
