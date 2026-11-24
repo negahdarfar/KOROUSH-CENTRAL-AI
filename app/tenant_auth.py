@@ -198,8 +198,11 @@ def authorize_tenant_inference(raw_key: str | None, repository: str | None) -> d
     return identity
 
 
-def authorize_job_execution(key_id: str | None, repository: str | None, team_id: str | None) -> bool:
-    """Revalidate tenant key revocation and repository/team binding at execution time."""
+def authorize_job_execution(
+    key_id: str | None, repository: str | None, team_id: str | None,
+    job_type: str | None = None,
+) -> bool:
+    """Revalidate tenant identity and job-specific scopes immediately before execution."""
     if not key_id or not repository or not team_id:
         return False
     repo = repository.strip().lower()
@@ -211,6 +214,11 @@ def authorize_job_execution(key_id: str | None, repository: str | None, team_id:
         ).fetchone()
         if not row or row["team_id"] != team_id:
             return False
-        return repo in json.loads(row["repositories_json"]) and "jobs:enqueue" in json.loads(row["scopes_json"])
+        scopes = set(json.loads(row["scopes_json"]))
+        if repo not in json.loads(row["repositories_json"]) or "jobs:enqueue" not in scopes:
+            return False
+        if job_type in {"chat.completion", "agent.execute"} and "inference:chat" not in scopes:
+            return False
+        return True
     finally:
         conn.close()
