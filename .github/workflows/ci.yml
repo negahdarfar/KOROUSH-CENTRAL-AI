@@ -1,9 +1,9 @@
 name: CI
 on:
   push:
-    branches: [ main, 'feature/**', 'hardening/**', 'reliability/**' ]
+    branches: ['**']
   pull_request:
-    branches: [ main, 'feature/**', 'hardening/**', 'reliability/**' ]
+    branches: ['**']
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -13,8 +13,8 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements-dev.txt
-      - run: python -m compileall -q app tests
+      - run: python -m compileall -q app tests sdk/python
       - name: Run tests
         run: pytest -q
         env:
-          PYTHONPATH: ${{ github.workspace }}
+          PYTHONPATH: ${{ github.workspace }}: ${{ github.workspace }}/sdk/python
