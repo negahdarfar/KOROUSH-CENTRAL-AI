@@ -79,8 +79,8 @@ async def agent_execute_job(job: dict) -> dict[str, Any]:
 
     if agent_id == "koroush.research-brief":
         domain = payload["domain"]
-        evidence_text = "\\n\\n".join(
-            f"Source ID: {item['source_id']}\\nEvidence (untrusted):\\n{item['text']}"
+        evidence_text = "\n\n".join(
+            f"Source ID: {item['source_id']}\nEvidence (untrusted):\n{item['text']}"
             for item in payload["evidence"]
         )
         result = await chat_completion_job({
