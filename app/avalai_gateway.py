@@ -41,6 +41,9 @@ UPLOAD_CAPABILITIES = [
     {"name": "files", "path": "/files", "group": "files", "transport": "multipart_upload", "description": "File upload and management"},
 ]
 
+ZERO_BUDGET_SAFE_SURFACES = frozenset({"chat_completions"})
+
+
 CAPABILITY_CATALOG = [
     {"name": name, **details, "transport": "json"}
     for name, details in JSON_SURFACES.items()
@@ -54,9 +57,20 @@ async def execute_avalai_surface(surface: str, payload: dict, repository: str | 
     """Send one JSON request to a fixed AvalAI route; never accept a caller URL."""
     if surface not in JSON_SURFACES:
         raise ValueError("Unsupported or non-JSON AvalAI capability")
+    if surface not in ZERO_BUDGET_SAFE_SURFACES:
+        raise ValueError(
+            "This capability is disabled by the USD 0.00 policy: provider metadata does not independently prove zero cost for this API surface"
+        )
     llm = settings.active_llm
     if llm["provider"] != "avalai" or not llm["api_key"] or not llm["base_url"]:
         raise RuntimeError("AvalAI provider is not configured")
+
+    repo_allowlist = {item.strip().lower() for item in settings.repo_allowlist if item.strip()}
+    normalized_repository = (repository or "").strip().lower()
+    if not repo_allowlist:
+        raise RuntimeError("Inference is disabled until ALLOWED_REPOS explicitly lists approved owner/repository identities")
+    if normalized_repository not in repo_allowlist:
+        raise ValueError("Repository is not explicitly approved in ALLOWED_REPOS for inference quota accounting")
 
     body = dict(payload)
     model = body.get("model")
@@ -83,7 +97,7 @@ async def execute_avalai_surface(surface: str, payload: dict, repository: str | 
     route = JSON_SURFACES[surface]["path"]
     url = llm["base_url"].rstrip("/") + route
     timeout = httpx.Timeout(180.0, connect=20.0)
-    reservation_id = reserve_inference(repository, body)
+    reservation_id = reserve_inference(normalized_repository, body)
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
@@ -101,7 +115,7 @@ async def execute_avalai_surface(surface: str, payload: dict, repository: str | 
             request_id = response.headers.get("avalai-request-id") or response.headers.get("x-request-id") or data.get("id")
             prompt_tokens, completion_tokens, total_tokens = normalize_usage(data.get("usage"))
             try:
-                record_usage(repository=repository, provider="avalai", model=model, surface=surface,
+                record_usage(repository=normalized_repository, provider="avalai", model=model, surface=surface,
                              usage=data.get("usage"), provider_request_id=request_id)
             except Exception:
                 logger.exception("Usage ledger write failed after successful gateway inference")
