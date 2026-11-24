@@ -11,6 +11,7 @@ from .github_writer import publish_changes
 from .avalai import list_avalai_models, list_avalai_model_catalog
 from .model_router import select_avalai_model
 from .avalai_gateway import CAPABILITY_CATALOG, JSON_SURFACES, execute_avalai_surface, AvalAIRequestError
+from .version import runtime_version
 
 app = FastAPI(title="KOROUSH CENTRAL AI", version="0.3.0", description="Private, audit-first GitHub engineering agent")
 
@@ -42,6 +43,12 @@ async def health():
     return {"status": "ok", "service": "KOROUSH CENTRAL AI"}
 
 
+@app.get("/api/version")
+async def api_version():
+    """Expose non-secret runtime commit and deployment metadata for verification."""
+    return runtime_version()
+
+
 @app.get("/panel", response_class=HTMLResponse)
 async def panel():
     return HTMLResponse("""<!doctype html>
@@ -56,6 +63,11 @@ textarea{min-height:100px}button{background:#2563eb;color:white;border:0;font-we
 pre{white-space:pre-wrap;word-break:break-word;background:#0d1726;padding:14px;border-radius:9px;min-height:50px}
 small{color:#b9c6d8}
 </style><main><h2>KOROUSH CENTRAL AI</h2>
+<section id="deploymentVersion" style="border:1px solid #52647e;border-radius:10px;padding:12px;margin:14px 0">
+<strong>نسخه مستقرشده Railway</strong>
+<p id="versionStatus">در حال دریافت اطلاعات نسخه...</p>
+<small id="versionDetails">این بخش فقط اطلاعات غیرمحرمانه نسخه و Deployment را نمایش می‌دهد.</small>
+</section>
 <p>کلید مدیریتی فقط در حافظه موقت همین صفحه نگهداری می‌شود و با بستن صفحه از بین می‌رود.</p>
 <input id="key" type="password" autocomplete="off" placeholder="ADMIN_API_KEY">
 <button id="check">آزمایش اتصال GitHub و مدل هوش مصنوعی</button>
@@ -96,6 +108,29 @@ small{color:#b9c6d8}
 <small>شاخه اصلی هرگز مستقیماً تغییر نمی‌کند و Pull Request به‌صورت Draft ساخته می‌شود؛ ادغام خودکار انجام نمی‌شود.</small></main>
 <script>
 let adminKey='';
+async function loadDeploymentVersion(){
+ const status=document.getElementById('versionStatus');
+ const details=document.getElementById('versionDetails');
+ try{
+  const response=await fetch('/api/version',{cache:'no-store'});
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.detail||'خطا در دریافت نسخه');
+  if(data.commit_sha){
+   status.textContent='Commit مستقرشده: '+data.commit_short+' — '+(data.branch||'شاخه نامشخص');
+   details.textContent='SHA کامل: '+data.commit_sha+
+    (data.deployment_id?' | Deployment: '+data.deployment_id:'')+
+    (data.environment?' | محیط: '+data.environment:'')+
+    ' | برای تأیید نهایی، SHA را با آخرین Commit شاخه main در GitHub مقایسه کنید.';
+  }else{
+   status.textContent='نسخه دقیق قابل تشخیص نیست؛ متغیر RAILWAY_GIT_COMMIT_SHA در محیط اجرا موجود نیست.';
+   details.textContent='سرویس پاسخ می‌دهد، اما برای نمایش SHA باید متادیتای Railway در زمان اجرا در دسترس باشد.';
+  }
+ }catch(error){
+  status.textContent='بررسی نسخه ناموفق بود: '+error.message;
+ }
+}
+loadDeploymentVersion();
+
 const headers=()=>({'X-Admin-Key':adminKey});
 document.getElementById('check').addEventListener('click',async()=>{
  const key=document.getElementById('key').value;
