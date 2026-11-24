@@ -1,21 +1,21 @@
+import asyncio
+
 import pytest
 
 from app.quota_guard import reserve_inference, cancel_reservation, list_usage_alerts
 from app.alert_notifier import dispatch_usage_alerts
 
 
-@pytest.mark.asyncio
-async def test_alert_dispatch_is_disabled_without_delivery_configuration(tmp_path, monkeypatch):
+def test_alert_dispatch_is_disabled_without_delivery_configuration(tmp_path, monkeypatch):
     monkeypatch.setenv("USAGE_DB_PATH", str(tmp_path / "alerts.sqlite3"))
     for name in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "SMTP_HOST", "SMTP_FROM", "SMTP_TO"):
         monkeypatch.delenv(name, raising=False)
-    result = await dispatch_usage_alerts()
+    result = asyncio.run(dispatch_usage_alerts())
     assert result["sent"] == 0
     assert result["configured_channels"] == []
 
 
-@pytest.mark.asyncio
-async def test_telegram_delivery_is_idempotent(tmp_path, monkeypatch):
+def test_telegram_delivery_is_idempotent(tmp_path, monkeypatch):
     monkeypatch.setenv("USAGE_DB_PATH", str(tmp_path / "alerts.sqlite3"))
     monkeypatch.setenv("KOROUSH_REPO_QUOTAS", '{"org/repo":{"requests_per_day":1,"requests_per_month":10,"tokens_per_day":1000,"tokens_per_month":10000}}')
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
@@ -30,15 +30,14 @@ async def test_telegram_delivery_is_idempotent(tmp_path, monkeypatch):
         calls.append(message)
 
     monkeypatch.setattr("app.alert_notifier._send_telegram", fake_send)
-    first = await dispatch_usage_alerts()
-    second = await dispatch_usage_alerts()
+    first = asyncio.run(dispatch_usage_alerts())
+    second = asyncio.run(dispatch_usage_alerts())
     assert first["sent"] >= 1
     assert second["sent"] == 0
     assert calls
 
 
-@pytest.mark.asyncio
-async def test_failed_notification_can_be_retried(tmp_path, monkeypatch):
+def test_failed_notification_can_be_retried(tmp_path, monkeypatch):
     monkeypatch.setenv("USAGE_DB_PATH", str(tmp_path / "alerts.sqlite3"))
     monkeypatch.setenv("KOROUSH_REPO_QUOTAS", '{"org/repo":{"requests_per_day":1,"requests_per_month":10,"tokens_per_day":1000,"tokens_per_month":10000}}')
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
@@ -53,7 +52,7 @@ async def test_failed_notification_can_be_retried(tmp_path, monkeypatch):
             raise RuntimeError("temporary failure")
 
     monkeypatch.setattr("app.alert_notifier._send_telegram", fake_send)
-    first = await dispatch_usage_alerts()
-    second = await dispatch_usage_alerts()
+    first = asyncio.run(dispatch_usage_alerts())
+    second = asyncio.run(dispatch_usage_alerts())
     assert first["failed"] >= 1
     assert second["sent"] >= 1
