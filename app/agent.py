@@ -28,6 +28,15 @@ async def _resolve_model(llm: dict, requested_model: str | None) -> str:
     return select_avalai_model(catalog, task="general")
 
 
+def editable_snapshot_paths(snapshot: dict) -> set[str]:
+    """Return inspected paths safe to replace; redacted files must remain read-only."""
+    return {
+        item["path"] for item in snapshot.get("files", [])
+        if isinstance(item, dict) and isinstance(item.get("path"), str)
+        and not item.get("contains_redactions", False)
+    }
+
+
 def validate_fix_proposal(raw: str, allowed_paths: set[str]) -> dict:
     """Parse and constrain an AI proposal; never apply the returned diff."""
     text = raw.strip()
@@ -93,7 +102,7 @@ async def generate_fix_proposal(repository: str, task: str, snapshot: dict, mode
     if not all(llm[key] for key in required):
         raise RuntimeError("Selected LLM provider is not fully configured")
     selected_model = await _resolve_model(llm, model)
-    allowed_paths = {item["path"] for item in snapshot.get("files", [])}
+    allowed_paths = editable_snapshot_paths(snapshot)
     if not allowed_paths:
         raise ValueError("No eligible source files were found for a fix proposal")
 
@@ -141,7 +150,7 @@ async def generate_fix_implementation(repository: str, task: str, snapshot: dict
         raise RuntimeError("Selected LLM provider is not fully configured")
     selected_model = await _resolve_model(llm, model)
     files = snapshot.get("files", [])
-    allowed_paths = {item["path"] for item in files}
+    allowed_paths = editable_snapshot_paths(snapshot)
     if not allowed_paths:
         raise ValueError("No eligible source files were found for a fix")
     system = (
