@@ -77,6 +77,11 @@ class CentralAIClient:
             "GET", "/api/agents", params={"repository": self.repository}
         )
 
+    async def apis(self) -> dict:
+        return await self._request(
+            "GET", "/api/apis", params={"repository": self.repository}
+        )
+
     async def agent(self, agent_id: str) -> dict:
         return await self._request(
             "GET", "/api/agents/" + quote(agent_id, safe=""),
