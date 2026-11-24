@@ -138,7 +138,7 @@ class CentralAIClient:
             raise ValueError("payload must be an object")
         return await self.submit_job(
             job_type="agent.execute",
-            payload={**payload, "agent_id": agent_id},
+            payload={**payload, "agent_id": agent_id, "schema_version": 1},
             idempotency_key=idempotency_key,
             max_attempts=max_attempts,
         )
