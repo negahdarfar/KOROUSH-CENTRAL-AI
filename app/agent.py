@@ -209,3 +209,33 @@ async def generate_fix_implementation(repository: str, task: str, snapshot: dict
         "tests_to_run": [str(x)[:500] for x in tests[:10]],
         "model": selected_model,
     }
+
+
+def validate_fix_implementation(result: dict, allowed_paths: set[str]) -> dict:
+    """Validate complete replacement contents against the inspected file allowlist."""
+    if not isinstance(result, dict) or not isinstance(result.get("files"), list):
+        raise ValueError("AI implementation response has an invalid schema")
+    files = result["files"]
+    if len(files) > 5:
+        raise ValueError("AI implementation exceeds the five-file limit")
+    safe_files, seen = [], set()
+    for item in files:
+        if not isinstance(item, dict):
+            raise ValueError("Each implementation file must be an object")
+        path, content = item.get("path"), item.get("content")
+        if (not isinstance(path, str) or path not in allowed_paths or path.startswith("/")
+                or ".." in path.split("/") or "\\" in path or path in seen):
+            raise ValueError("AI implementation contains an unsafe, duplicate, or uninspected path")
+        if not isinstance(content, str) or len(content) > 50000:
+            raise ValueError("AI implementation contains invalid or oversized file content")
+        seen.add(path)
+        safe_files.append({"path": path, "content": content})
+    tests, findings = result.get("tests_to_run", []), result.get("findings", [])
+    if not isinstance(tests, list) or not isinstance(findings, list):
+        raise ValueError("AI implementation findings and tests must be arrays")
+    return {
+        "summary": str(result.get("summary", ""))[:2000],
+        "findings": [str(x)[:1000] for x in findings[:10]],
+        "files": safe_files,
+        "tests_to_run": [str(x)[:500] for x in tests[:10]],
+    }
