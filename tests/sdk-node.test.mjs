@@ -84,3 +84,25 @@ test("SDK rejects lookalike localhost and credential-bearing API URLs", () => {
     }));
   }
 });
+
+test("submitAgent pins the selected allowlisted agent and durable job type", async () => {
+  let requestBody;
+  const client = new CentralAIClient({
+    baseUrl: "https://central.example",
+    tenantKey: "kor_test",
+    repository: "org/repo",
+    fetchImpl: async (_url, options) => {
+      requestBody = JSON.parse(options.body);
+      return new Response(JSON.stringify({ job_id: "agent-1", status: "queued" }), { status: 202 });
+    },
+  });
+  const result = await client.submitAgent({
+    agentId: "koroush.text-summarizer",
+    payload: { text: "summarize", agent_id: "tenant.override" },
+    idempotencyKey: "summary-1",
+  });
+  assert.equal(result.status, "queued");
+  assert.equal(requestBody.job_type, "agent.execute");
+  assert.equal(requestBody.payload.agent_id, "koroush.text-summarizer");
+  assert.equal(client.headers, undefined);
+});
