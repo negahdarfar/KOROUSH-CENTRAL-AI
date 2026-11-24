@@ -104,3 +104,11 @@ def test_api_catalog_paths_match_registered_fastapi_routes():
         if (item["method"], item["path"]) not in registered
     ]
     assert not missing, f"API catalog contains unregistered routes: {missing}"
+
+
+
+def test_runtime_version_matches_agent_manifest():
+    from app.main import app
+    from app.agent_registry import PLATFORM_VERSION
+
+    assert app.version == PLATFORM_VERSION
