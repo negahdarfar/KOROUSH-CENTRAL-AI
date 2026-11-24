@@ -3,7 +3,8 @@
 A provider's self-declared COST_CLASS=free is NOT pricing evidence. A provider
 can be used only when its exact model ID appears in a trusted, runtime-verified
 free-model evidence map supplied by the caller. PR20 currently supplies such
-evidence only for authenticated AvalAI catalog entries.
+evidence only for authenticated AvalAI catalog entries. Credentials remain
+internal dispatch data and must never be returned in API responses or logs.
 """
 from __future__ import annotations
 
