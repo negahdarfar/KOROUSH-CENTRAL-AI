@@ -14,6 +14,7 @@ from .model_intelligence import classify_model
 from .avalai_gateway import CAPABILITY_CATALOG, JSON_SURFACES, execute_avalai_surface, AvalAIRequestError
 from .version import runtime_version
 from .usage_ledger import usage_summary
+from .quota_guard import list_usage_alerts
 
 app = FastAPI(title="KOROUSH CENTRAL AI", version="0.3.0", description="Private, audit-first GitHub engineering agent")
 
@@ -643,6 +644,16 @@ async def usage_report(
     """Return repository-scoped daily/monthly inference token totals."""
     require_admin(x_admin_key)
     return usage_summary(repository=repository)
+
+
+@app.get("/api/usage/alerts")
+async def usage_alert_report(
+    limit: int = Query(default=100, ge=1, le=500),
+    x_admin_key: str | None = Header(default=None),
+):
+    """Return deduplicated repository quota threshold alerts (70/85/100%)."""
+    require_admin(x_admin_key)
+    return {"alerts": list_usage_alerts(limit=limit)}
 
 
 @app.get("/api/avalai/capabilities")
