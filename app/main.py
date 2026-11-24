@@ -70,7 +70,7 @@ small{color:#b9c6d8}
 <option value="ocr">OCR / تشخیص متن تصویر</option>
 <option value="videos">Video / عملیات ویدئویی</option>
 </select>
-<textarea id="apiPayload">{ "model": "MODEL_ID", "input": "Hello" }</textarea>
+<textarea id="apiPayload">{ "input": "Hello" }</textarea>
 <button id="runCapability">اجرای API انتخاب‌شده</button>
 <pre id="capabilityResult">ابتدا مدل‌ها را بارگذاری کنید؛ سپس بدنه درخواست را مطابق مستندات تنظیم کنید.</pre>
 <p><small>قابلیت‌های صوتی ورودی، ویرایش تصویر، فایل و Batch به بارگذاری multipart یا انتقال زنده نیاز دارند و هنوز از این درگاه JSON اجرا نمی‌شوند.</small></p>
