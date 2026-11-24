@@ -17,4 +17,4 @@ jobs:
       - name: Run tests
         run: pytest -q
         env:
-          PYTHONPATH: ${{ github.workspace }}: ${{ github.workspace }}/sdk/python
+          PYTHONPATH: "${{ github.workspace }}:${{ github.workspace }}/sdk/python"
