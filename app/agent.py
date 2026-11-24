@@ -11,6 +11,7 @@ from .model_router import rank_avalai_models, select_avalai_model
 from .workflow_registry import resolve_workflow_policy
 from .usage_ledger import record_usage, normalize_usage
 from .quota_guard import reserve_inference, complete_reservation, cancel_reservation
+from .avalai_gateway import require_approved_repository
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,10 @@ async def _chat_completion_with_free_failover(
     """Try ranked, catalog-confirmed-free chat models on transient failures only."""
     if llm.get("provider") != "avalai" or not llm.get("api_key") or not llm.get("base_url"):
         raise RuntimeError("Inference blocked: only configured AvalAI with catalog-confirmed free models is allowed")
+
+    # Apply the same operator-approved repository boundary to every agent
+    # inference path, not only the direct JSON gateway.
+    repository = require_approved_repository(repository, settings.repo_allowlist)
 
     catalog = await list_avalai_models()
     policy = resolve_workflow_policy(repository=repository)
