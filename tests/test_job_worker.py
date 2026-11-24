@@ -2,7 +2,7 @@ import asyncio
 
 from app.durable_jobs import enqueue_tenant_job
 from app.job_worker import run_once
-from app.job_payload_store import put_payload, get_payload
+from app.job_payload_store import put_payload, get_payload, JobPayloadError
 from cryptography.fernet import Fernet
 
 
@@ -34,6 +34,11 @@ def test_tenant_job_is_bound_to_identity_and_worker_revalidates(tmp_path, monkey
                                   )))
     assert result == "succeeded"
     assert called == [(job["id"], {"instruction": "safe test payload"})]
+    try:
+        get_payload(payload_ref)
+        assert False, "successful job should release its encrypted input payload"
+    except JobPayloadError:
+        pass
 
 
 def test_worker_rejects_revoked_or_unassigned_tenant_before_handler(tmp_path, monkeypatch):
