@@ -1,0 +1,47 @@
+# Connected repository onboarding
+
+KOROUSH CENTRAL AI is the shared orchestration/control plane. It centralizes approved model routing, capability discovery, tenant-bound jobs, cost/quota enforcement, and operational policy. It does not take ownership of each repository's product data or business logic.
+
+## Candidate repository rollout
+
+These repositories were identified as candidates for staged integration. This is an onboarding plan, not a claim that their production traffic has already been migrated.
+
+| Repository | Primary language | Initial central integration |
+|---|---|---|
+| `negahdarfar/YouTube-Factory-` | Python | Replace duplicated model selection/provider calls with the Python SDK; submit script/metadata generation as central chat jobs |
+| `negahdarfar/Ptc-earning-` | Python | Route approved AI text tasks through central jobs; keep payments, user records, and earning logic local |
+| `negahdarfar/Daily-Forex-Analyze-` | Python | Route summarization/classification tasks centrally; keep market-data ingestion, calculations, risk controls, and trading decisions locally |
+| `negahdarfar/Nft-art-factory` | JavaScript | Use the Node SDK for text/metadata jobs; keep image rendering, storage, minting, and wallet operations local |
+
+## Rollout sequence
+
+1. Register each exact `owner/repository` under its own team identity using the admin tenant-key API.
+2. Issue separate tenant credentials per repository (or per independently trusted service), with only the scopes it needs.
+3. Add `KOROUSH_CENTRAL_URL` and `KOROUSH_TENANT_API_KEY` to that repository's secret manager. Never commit credentials.
+4. Install the matching SDK (Python or Node) and first call `manifest()`, `agents()`, and `apis()` as read-only discovery checks.
+5. Move one low-risk, non-financial, non-publishing AI task to `chat.completion` jobs. Use a stable idempotency key for every logical operation.
+6. Verify tenant isolation, quota accounting, encrypted job payload lifecycle, logs, retry behavior, and real deployed readiness.
+7. Only after a repository's integration PR and production checks pass, disable its old duplicate provider integration. Keep rollback available until then.
+
+## Credential scopes
+
+- `inference:chat`: synchronous tenant inference where the specific endpoint supports it.
+- `jobs:enqueue`: submit supported durable jobs.
+- `jobs:read`: read status/results for jobs owned by the same tenant identity.
+
+For the durable job API, issue both `jobs:enqueue` and `jobs:read` if the service needs submission and polling. The default tenant-key scope is only `inference:chat`, so do not assume a newly created key can enqueue jobs.
+
+Tenant keys are created with `POST /api/admin/tenant-keys` and listed/revoked through the corresponding admin endpoints. The raw key is returned only once. Use a unique team/repository binding and keep the admin key separate from tenant keys.
+
+## What remains local by design
+
+- User accounts, subscriptions, payment flows, wallet keys, financial ledgers, and personal data.
+- Market prices, trading strategy rules, risk limits, trade execution and broker credentials.
+- Video/image rendering pipelines, media assets, upload schedules, channel credentials and publication policies.
+- NFT minting, wallet signing, object storage and chain transactions.
+
+Centralization means shared AI services and orchestration, not moving sensitive product data or high-risk actions into one global process.
+
+## Current rollout state
+
+The central branch contains discovery endpoints and Python/Node SDK clients. No candidate repository has been changed by this onboarding document. Each downstream integration should be a separate, reviewable pull request. Production use remains gated on tenant-key provisioning, durable worker configuration, persistent storage, provider evidence, and deployment verification.
