@@ -1,4 +1,53 @@
 import httpx
+
+import re
+
+
+BLOCKED_AUDIT_PARTS = (
+    ".git/", "node_modules/", ".venv/", "__pycache__/", "dist/", "build/",
+    ".terraform/", "vendor/", "coverage/"
+)
+SAFE_AUDIT_SUFFIXES = {
+    ".py", ".js", ".ts", ".tsx", ".jsx", ".json", ".toml", ".yaml",
+    ".yml", ".md", ".txt", ".html", ".css", ".sh", ".sql", ".pine"
+}
+BLOCKED_AUDIT_NAMES = {
+    ".env", ".env.local", ".env.production", "id_rsa", "id_ed25519",
+    "credentials.json", "secrets.json"
+}
+
+
+def is_audit_candidate(item: dict) -> bool:
+    path = item.get("path", "")
+    lower = path.lower()
+    name = lower.rsplit("/", 1)[-1]
+    suffix = "." + name.rsplit(".", 1)[-1] if "." in name else ""
+    if item.get("type") != "blob" or not path or name in BLOCKED_AUDIT_NAMES:
+        return False
+    if any(part in lower for part in BLOCKED_AUDIT_PARTS):
+        return False
+    if name.startswith(".env") or any(term in name for term in ("secret", "credential", "token", "private_key")):
+        return False
+    if suffix not in SAFE_AUDIT_SUFFIXES and name not in {"dockerfile", "makefile"}:
+        return False
+    size = item.get("size")
+    if size is not None and size > 1_000_000:
+        return False
+    return True
+
+
+def redact_secrets(content: str) -> str:
+    patterns = [
+        (r"(?i)(api[_-]?key|secret|password|access[_-]?token)\s*[:=]\s*['\"]?[^\s'\"]{8,}", r"\1=[REDACTED]"),
+        (r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b", "[REDACTED_GITHUB_TOKEN]"),
+        (r"\bgithub_pat_[A-Za-z0-9_]{20,}\b", "[REDACTED_GITHUB_TOKEN]"),
+        (r"\bAKIA[0-9A-Z]{16}\b", "[REDACTED_AWS_KEY]"),
+        (r"\bsk-[A-Za-z0-9_-]{20,}\b", "[REDACTED_API_KEY]"),
+    ]
+    for pattern, replacement in patterns:
+        content = re.sub(pattern, replacement, content)
+    return content
+
 from .config import settings
 
 API = "https://api.github.com"
@@ -89,3 +138,41 @@ class GitHubClient:
                     for item in tree_data.get("tree", [])
                 ],
             }
+
+    async def get_repo_snapshot(self, full_name: str, max_files: int = 20, max_chars_per_file: int = 12000):
+        """Return a bounded source snapshot while excluding likely secrets and binary files."""
+        import base64
+
+        inventory = await self.get_repo_tree(full_name)
+        selected = [item["path"] for item in inventory["tree"] if is_audit_candidate(item)]
+
+        files = []
+        total_chars = 0
+        async with httpx.AsyncClient(timeout=30) as client:
+            for path in selected[:max_files]:
+                response = await client.get(
+                    f"{API}/repos/{full_name}/contents/{path}",
+                    headers=self._headers(),
+                    params={"ref": inventory["default_branch"]},
+                )
+                if response.status_code != 200:
+                    continue
+                payload = response.json()
+                if payload.get("encoding") != "base64" or not payload.get("content"):
+                    continue
+                try:
+                    content = base64.b64decode(payload["content"]).decode("utf-8", errors="replace")
+                except Exception:
+                    continue
+                content = redact_secrets(content[:max_chars_per_file])
+                if total_chars + len(content) > 100000:
+                    break
+                files.append({"path": path, "content": content})
+                total_chars += len(content)
+
+        return {
+            "default_branch": inventory["default_branch"],
+            "truncated": inventory["truncated"],
+            "file_count": len(files),
+            "files": files,
+        }
