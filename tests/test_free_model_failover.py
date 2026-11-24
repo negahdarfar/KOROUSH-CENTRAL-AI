@@ -34,6 +34,7 @@ def _response(status, payload=None):
 
 def test_transient_failure_falls_back_only_to_catalog_confirmed_free_models(monkeypatch, tmp_path):
     monkeypatch.setenv("USAGE_DB_PATH", str(tmp_path / "usage.sqlite3"))
+    monkeypatch.setattr(agent.settings, "allowed_repos", "org/repo")
     FakeAsyncClient.calls = []
     FakeAsyncClient.responses = [
         _response(503),
@@ -71,6 +72,7 @@ async def _async_value(value):
 
 def test_explicit_model_does_not_silently_switch_to_another_model(monkeypatch, tmp_path):
     monkeypatch.setenv("USAGE_DB_PATH", str(tmp_path / "usage.sqlite3"))
+    monkeypatch.setattr(agent.settings, "allowed_repos", "org/repo")
     FakeAsyncClient.calls = []
     FakeAsyncClient.responses = [_response(503)]
     monkeypatch.setattr(agent.httpx, "AsyncClient", FakeAsyncClient)
@@ -93,6 +95,7 @@ def test_explicit_model_does_not_silently_switch_to_another_model(monkeypatch, t
 
 def test_non_retryable_auth_error_does_not_trigger_failover(monkeypatch, tmp_path):
     monkeypatch.setenv("USAGE_DB_PATH", str(tmp_path / "usage.sqlite3"))
+    monkeypatch.setattr(agent.settings, "allowed_repos", "org/repo")
     FakeAsyncClient.calls = []
     FakeAsyncClient.responses = [_response(401)]
     monkeypatch.setattr(agent.httpx, "AsyncClient", FakeAsyncClient)
@@ -110,3 +113,18 @@ def test_non_retryable_auth_error_does_not_trigger_failover(monkeypatch, tmp_pat
             {"messages": []}, task="general", repository="org/repo",
         ))
     assert [call["model"] for call in FakeAsyncClient.calls] == ["first-free"]
+
+
+
+def test_agent_inference_rejects_repository_outside_operator_allowlist(monkeypatch, tmp_path):
+    monkeypatch.setenv("USAGE_DB_PATH", str(tmp_path / "usage.sqlite3"))
+    monkeypatch.setattr(agent.settings, "allowed_repos", "org/approved")
+    async def unexpected_catalog_call():
+        raise AssertionError("catalog must not be queried for an unapproved repository")
+    monkeypatch.setattr(agent, "list_avalai_models", unexpected_catalog_call)
+
+    with pytest.raises(ValueError, match="not explicitly approved"):
+        asyncio.run(agent._chat_completion_with_free_failover(
+            {"provider": "avalai", "api_key": "test", "base_url": "https://api.avalai.ir/v1", "model": ""},
+            {"messages": []}, task="general", repository="org/unapproved",
+        ))
