@@ -106,7 +106,7 @@ The public `/api/platform/manifest` deliberately omits operator-only endpoints. 
 
 ## First executable central text agents
 
-The durable worker currently supports two job types: `chat.completion` and `agent.execute`. The latter dispatches only to three fixed, in-process handlers; it never imports code or downloads plugins from tenant repositories:
+The durable worker currently supports two job types: `chat.completion` and `agent.execute`. The latter dispatches only to four fixed, in-process handlers; it never imports code or downloads plugins from tenant repositories:
 
 | Agent ID | Required payload fields | Purpose |
 |---|---|---|
