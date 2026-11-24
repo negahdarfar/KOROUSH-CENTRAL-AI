@@ -111,7 +111,10 @@ async def _chat_completion_with_free_failover(
                 data = response.json()
                 prompt_tokens, completion_tokens, total_tokens = normalize_usage(data.get("usage"))
                 _record_chat_usage(repository, model_id, data, response, "chat_completions")
-                complete_reservation(reservation_id, total_tokens or prompt_tokens + completion_tokens)
+                try:
+                    complete_reservation(reservation_id, total_tokens or prompt_tokens + completion_tokens)
+                except Exception:
+                    logger.exception("Quota reservation finalization failed; reservation will expire conservatively")
                 reservation_id = None
                 return data, response, model_id
 
