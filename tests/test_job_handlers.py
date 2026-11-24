@@ -84,3 +84,31 @@ def test_research_brief_rejects_invalid_contract_before_provider_call(monkeypatc
             "repository": "org/repo",
             "payload": {"agent_id": "koroush.research-brief", "domain": "unknown", "evidence": []},
         }))
+
+def test_research_brief_applies_domain_specific_safety_rules(monkeypatch):
+    captured = []
+
+    async def fake_dispatch(llm, payload, *, task, repository, requested_model, timeout):
+        captured.append(payload["messages"][0]["content"])
+        return ({"choices": [{"message": {"role": "assistant", "content": "Evidence-limited report."}}],
+                 "usage": {}, "id": "domain-test"}, FakeResponse(), "verified-model")
+
+    monkeypatch.setattr(job_handlers, "_chat_completion_with_free_failover", fake_dispatch)
+    cases = {
+        "forex": "executable trade instructions",
+        "youtube": "recency, volume, and trend direction",
+        "ptc": "payout, ownership, and legitimacy claims",
+        "nft": "floor prices, sales, rarity, liquidity",
+    }
+    for domain, expected in cases.items():
+        asyncio.run(job_handlers.agent_execute_job({
+            "repository": "org/repo",
+            "payload": {
+                "agent_id": "koroush.research-brief",
+                "domain": domain,
+                "evidence": [{"source_id": "source-1", "text": "Evidence excerpt."}],
+            },
+        }))
+    assert len(captured) == 4
+    for prompt, expected in zip(captured, cases.values()):
+        assert expected in prompt
