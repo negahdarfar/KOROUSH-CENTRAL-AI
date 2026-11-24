@@ -8,7 +8,8 @@ from .config import settings
 from .avalai import list_avalai_models
 from .model_router import rank_avalai_models, select_avalai_model
 from .workflow_registry import resolve_workflow_policy
-from .usage_ledger import record_usage
+from .usage_ledger import record_usage, normalize_usage
+from .quota_guard import reserve_inference, complete_reservation, cancel_reservation
 
 
 def _record_chat_usage(repository: str, model: str, data: dict, response: httpx.Response, surface: str) -> None:
@@ -87,26 +88,34 @@ async def _chat_completion_with_free_failover(
     headers = {"Authorization": f"Bearer {llm['api_key']}"}
     retryable_statuses = {408, 425, 429, 500, 502, 503, 504}
     last_failure = "unknown transient provider failure"
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        for index, model_id in enumerate(candidates):
-            body = {**payload, "model": model_id}
-            try:
-                response = await client.post(url, headers=headers, json=body)
-            except (httpx.TimeoutException, httpx.NetworkError):
-                last_failure = "network or timeout error"
-                continue
-            if response.status_code in retryable_statuses:
-                last_failure = f"retryable HTTP {response.status_code}"
-                continue
-            response.raise_for_status()
-            data = response.json()
-            _record_chat_usage(repository, model_id, data, response, "chat_completions")
-            return data, response, model_id
+    reservation_id = reserve_inference(repository, payload)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            for index, model_id in enumerate(candidates):
+                body = {**payload, "model": model_id}
+                try:
+                    response = await client.post(url, headers=headers, json=body)
+                except (httpx.TimeoutException, httpx.NetworkError):
+                    last_failure = "network or timeout error"
+                    continue
+                if response.status_code in retryable_statuses:
+                    last_failure = f"retryable HTTP {response.status_code}"
+                    continue
+                response.raise_for_status()
+                data = response.json()
+                prompt_tokens, completion_tokens, total_tokens = normalize_usage(data.get("usage"))
+                _record_chat_usage(repository, model_id, data, response, "chat_completions")
+                complete_reservation(reservation_id, total_tokens or prompt_tokens + completion_tokens)
+                reservation_id = None
+                return data, response, model_id
 
-    raise RuntimeError(
-        f"All permitted free-model attempts failed ({len(candidates)} attempted; last failure: {last_failure}). "
-        "No paid or unknown-price fallback was attempted."
-    )
+        raise RuntimeError(
+            f"All permitted free-model attempts failed ({len(candidates)} attempted; last failure: {last_failure}). "
+            "No paid or unknown-price fallback was attempted."
+        )
+    finally:
+        if reservation_id:
+            cancel_reservation(reservation_id)
 
 
 def editable_snapshot_paths(snapshot: dict) -> set[str]:
