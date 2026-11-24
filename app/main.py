@@ -1,12 +1,17 @@
 import secrets
 import httpx
 from fastapi import FastAPI, HTTPException, Header
+from pydantic import BaseModel, Field
 from fastapi.responses import HTMLResponse
 from .config import settings
 from .github_client import GitHubClient
-from .agent import summarize_audit
+from .agent import summarize_audit, generate_fix_proposal
 
 app = FastAPI(title="KOROUSH CENTRAL AI", version="0.2.0", description="Private, audit-first GitHub engineering agent")
+
+
+class FixProposalRequest(BaseModel):
+    task: str = Field(min_length=8, max_length=4000)
 gh = GitHubClient()
 
 
@@ -118,3 +123,37 @@ async def audit(owner: str, repo: str, x_admin_key: str | None = Header(default=
         raise HTTPException(status_code=403, detail=str(e))
     except Exception:
         raise HTTPException(status_code=502, detail="Audit failed; check server logs")
+
+
+@app.post("/api/fix-proposal/{owner}/{repo}")
+async def fix_proposal(
+    owner: str,
+    repo: str,
+    request: FixProposalRequest,
+    x_admin_key: str | None = Header(default=None),
+):
+    """Generate a bounded AI repair proposal; never write to GitHub."""
+    require_admin(x_admin_key)
+    full_name = f"{owner}/{repo}"
+    try:
+        snapshot = await gh.get_repo_snapshot(full_name)
+        proposal = await generate_fix_proposal(full_name, request.task, snapshot)
+        return {
+            "repository": full_name,
+            "mode": "proposal-only",
+            "applied": False,
+            "snapshot": {
+                "default_branch": snapshot["default_branch"],
+                "file_count": snapshot["file_count"],
+                "paths": [item["path"] for item in snapshot["files"]],
+            },
+            "proposal": proposal,
+        }
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception:
+        raise HTTPException(status_code=502, detail="Fix proposal failed; check server logs")
