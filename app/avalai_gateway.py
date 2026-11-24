@@ -105,7 +105,10 @@ async def execute_avalai_surface(surface: str, payload: dict, repository: str | 
                              usage=data.get("usage"), provider_request_id=request_id)
             except Exception:
                 logger.exception("Usage ledger write failed after successful gateway inference")
-            complete_reservation(reservation_id, total_tokens or prompt_tokens + completion_tokens)
+            try:
+                complete_reservation(reservation_id, total_tokens or prompt_tokens + completion_tokens)
+            except Exception:
+                logger.exception("Quota reservation finalization failed; reservation will expire conservatively")
             reservation_id = None
             return {
                 "provider": "avalai",
