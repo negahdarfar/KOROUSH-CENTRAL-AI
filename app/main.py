@@ -8,8 +8,9 @@ from .config import settings
 from .github_client import GitHubClient
 from .agent import summarize_audit, generate_fix_proposal, generate_fix_implementation, editable_snapshot_paths, validate_fix_implementation, build_approval_digest
 from .github_writer import publish_changes
-from .avalai import list_avalai_models, list_avalai_model_catalog
+from .avalai import list_avalai_models, list_avalai_model_catalog, inspect_avalai_models
 from .model_router import select_avalai_model
+from .model_intelligence import classify_model
 from .avalai_gateway import CAPABILITY_CATALOG, JSON_SURFACES, execute_avalai_surface, AvalAIRequestError
 from .version import runtime_version
 
@@ -513,6 +514,11 @@ async def fix_apply(
         raise HTTPException(status_code=502, detail="AI repair publishing failed; check service logs")
 
 
+
+class AvalAIModelInspectRequest(BaseModel):
+    model_ids: list[str] = Field(min_length=1, max_length=25)
+
+
 class AvalAIExecuteRequest(BaseModel):
     payload: dict = Field(min_length=1)
 
@@ -531,6 +537,37 @@ async def avalai_capabilities(x_admin_key: str | None = Header(default=None)):
             "Multipart uploads, batch file workflows and realtime sessions need dedicated transports and are not sent through the JSON gateway.",
         ],
     }
+
+
+
+@app.post("/api/avalai/models/inspect")
+async def avalai_models_inspect(
+    request: AvalAIModelInspectRequest,
+    x_admin_key: str | None = Header(default=None),
+):
+    """Inspect a small caller-selected batch; classification is evidence-labelled."""
+    require_admin(x_admin_key)
+    try:
+        inspected = await inspect_avalai_models(request.model_ids)
+        models = [{**item, **classify_model(item)} for item in inspected]
+        return {
+            "provider": "avalai",
+            "requested": len(request.model_ids),
+            "inspected": len(models),
+            "models": models,
+            "notes": [
+                "Provider metadata is treated as verified evidence.",
+                "Model-name hints are inferred only and are not proof of capability.",
+                "A missing price is unknown, never assumed free.",
+                "Inspect at most 25 models per request to limit provider load.",
+            ],
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="AvalAI model inspection request failed")
 
 
 @app.post("/api/avalai/execute/{surface}")
