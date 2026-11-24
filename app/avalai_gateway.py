@@ -10,7 +10,6 @@ import httpx
 from .config import settings
 from .avalai import list_avalai_model_catalog
 from .model_router import rank_avalai_models
-from .workflow_registry import resolve_workflow_policy
 
 
 # Only fixed relative paths are allowed. Callers cannot choose arbitrary URLs.
@@ -56,7 +55,6 @@ async def execute_avalai_surface(surface: str, payload: dict) -> dict:
     body = dict(payload)
     model = body.get("model")
     catalog = await list_avalai_model_catalog()
-    policy = resolve_workflow_policy()
     eligible = rank_avalai_models(catalog, task="general", free_only=True, allow_unknown_cost=False, allow_paid=False)
     eligible_ids = {item["id"] for item in eligible}
     if model is not None:
