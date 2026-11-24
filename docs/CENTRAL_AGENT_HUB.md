@@ -132,3 +132,6 @@ Example job body for the summarizer:
 ```
 
 Submit it to `POST /api/jobs` with `X-Tenant-Key`. The result is available through the existing tenant-scoped `GET /api/jobs/{job_id}` endpoint. These are initial general-purpose text agents, not yet the specialized YouTube, Forex, PTC, or NFT agents. Specialized agents must be implemented and tested as separate bounded adapters before being advertised as executable.
+
+
+SDK convenience methods are available for fixed agent execution. In Python, call `await central.submit_agent(agent_id="koroush.text-summarizer", payload={"text": "..."}, idempotency_key="summary-001")`. In Node.js, call `await central.submitAgent({agentId: "koroush.text-summarizer", payload: {text: "..."}, idempotencyKey: "summary-001"})`. The SDK pins the chosen agent ID in the request body; callers cannot override it through payload fields.
