@@ -85,6 +85,7 @@ small{color:#b9c6d8}
  <pre id="modelAnalysis">برای بررسی قابلیت‌ها و قیمت، ابتدا فهرست مدل‌ها را بارگذاری کنید.</pre>
 <hr><h3>درگاه چندقابلیتی AvalAI</h3>
 <p>از فهرست زیر یک API را انتخاب و بدنه JSON متناسب با مستندات همان قابلیت را ارسال کنید. مدل انتخابی باید در فهرست مجاز حساب باشد.</p>
+<input id="quotaRepo" placeholder="شناسه مخزن برای سهمیه‌بندی، مثل owner/repository (اجباری)">
 <select id="surface">
 <option value="responses">Responses / استدلال و چندرسانه‌ای</option>
 <option value="chat_completions">Chat Completions / چت و بینایی</option>
@@ -280,11 +281,13 @@ document.getElementById('runCapability').addEventListener('click',async()=>{
  try{payload=JSON.parse(document.getElementById('apiPayload').value);}
  catch(e){out.textContent='JSON نامعتبر است: '+e.message;return;}
  const selected=document.getElementById('model').value;
+ const repository=document.getElementById('quotaRepo').value.trim();
+ if(!/^[^/\\s]+\\/[^/\\s]+$/.test(repository)){out.textContent='برای اعمال سهمیه، شناسه مخزن را به شکل owner/repository وارد کنید.';return;}
  if(selected)payload.model=selected;
  out.textContent='در حال ارسال درخواست به AvalAI...';
  try{
   const r=await fetch('/api/avalai/execute/'+encodeURIComponent(surface),{
-   method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({payload})
+   method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({payload,repository})
   });
   const data=await r.json();out.textContent=JSON.stringify(data,null,2);
  }catch(e){out.textContent='خطا در درخواست: '+e.message;}
