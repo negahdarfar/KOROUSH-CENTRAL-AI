@@ -153,3 +153,42 @@ def test_research_brief_rejects_utf8_payloads_over_byte_limit():
                 for i in range(4)
             ],
         })
+
+def test_research_brief_normalizes_provenance_metadata_and_content_fingerprint():
+    _, payload = validate_agent_input({
+        "agent_id": "koroush.research-brief",
+        "domain": "youtube",
+        "evidence": [{
+            "source_id": "trend-report",
+            "text": "A supplied trend excerpt.",
+            "publisher": "Example Publisher",
+            "source_url": "https://example.org/trends",
+            "observed_at": "2026-11-24T10:00:00Z",
+        }],
+    })
+    item = payload["evidence"][0]
+    assert item["publisher"] == "Example Publisher"
+    assert item["freshness"] in {"fresh", "recent", "stale"}
+    assert item["credibility"] == "unverified"
+    assert len(item["sha256"]) == 64
+
+
+def test_research_brief_rejects_invalid_provenance_metadata():
+    with pytest.raises(AgentContractError):
+        validate_agent_input({
+            "agent_id": "koroush.research-brief",
+            "domain": "forex",
+            "evidence": [{
+                "source_id": "bad-url", "text": "Excerpt",
+                "source_url": "http://example.org/insecure",
+            }],
+        })
+    with pytest.raises(AgentContractError):
+        validate_agent_input({
+            "agent_id": "koroush.research-brief",
+            "domain": "nft",
+            "evidence": [{
+                "source_id": "bad-time", "text": "Excerpt",
+                "observed_at": "2026-11-24T10:00:00",
+            }],
+        })
