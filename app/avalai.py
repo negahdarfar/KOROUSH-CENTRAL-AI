@@ -78,6 +78,11 @@ async def inspect_avalai_models(model_ids: list[str], max_concurrency: int = 5) 
             seen.add(model_id)
 
     llm, headers = await _active_avalai_config()
+    catalog = await list_avalai_model_catalog()
+    available_ids = {item["id"] for item in catalog}
+    unknown_ids = [model_id for model_id in clean_ids if model_id not in available_ids]
+    if unknown_ids:
+        raise ValueError("One or more model IDs are not present in the authenticated AvalAI catalog")
     semaphore = asyncio.Semaphore(max(1, min(max_concurrency, 5)))
     timeout = httpx.Timeout(12.0, connect=5.0)
 
