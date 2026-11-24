@@ -226,17 +226,21 @@ def fail_job(job_id: str, worker_id: str, error_code: str, *, retryable: bool = 
     conn = _connect()
     try:
         conn.execute("BEGIN IMMEDIATE")
-        row = conn.execute("SELECT attempts,max_attempts FROM durable_jobs WHERE id=? AND status='running' AND lease_owner=?",
-                           (job_id, worker_id)).fetchone()
+        now = _now().isoformat()
+        row = conn.execute("SELECT attempts,max_attempts FROM durable_jobs WHERE id=? AND status='running' AND lease_owner=? AND lease_until>?",
+                           (job_id, worker_id, now)).fetchone()
         if row is None:
             conn.execute("ROLLBACK")
             return False
         terminal = (not retryable) or row["attempts"] >= row["max_attempts"]
         delay = min(3600, 2 ** min(row["attempts"], 10))
         available = (_now() + timedelta(seconds=delay)).isoformat()
-        conn.execute("""UPDATE durable_jobs SET status=?, available_at=?, lease_owner=NULL, lease_until=NULL,
-            last_error_code=?, updated_at=? WHERE id=?""",
-            ("dead_letter" if terminal else "queued", available, code, _now().isoformat(), job_id))
+        cursor = conn.execute("""UPDATE durable_jobs SET status=?, available_at=?, lease_owner=NULL, lease_until=NULL,
+            last_error_code=?, updated_at=? WHERE id=? AND status='running' AND lease_owner=? AND lease_until>?""",
+            ("dead_letter" if terminal else "queued", available, code, now, job_id, worker_id, now))
+        if cursor.rowcount != 1:
+            conn.execute("ROLLBACK")
+            return False
         conn.execute("COMMIT")
         return True
     except Exception:
