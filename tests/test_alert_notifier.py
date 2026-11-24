@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from app.quota_guard import reserve_inference, cancel_reservation, list_usage_alerts
-from app.alert_notifier import dispatch_usage_alerts, _smtp_settings
+from app.alert_notifier import dispatch_usage_alerts, _smtp_settings, _configured_channels
 
 
 def setup_smtp(monkeypatch):
@@ -30,8 +30,7 @@ def test_telegram_delivery_is_idempotent(tmp_path, monkeypatch):
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "123")
     reservation = reserve_inference("org/repo", {"input": "x"})
     cancel_reservation(reservation)
-    alerts = list_usage_alerts()
-    assert alerts
+    assert list_usage_alerts()
     calls = []
 
     async def fake_send(message):
@@ -42,8 +41,7 @@ def test_telegram_delivery_is_idempotent(tmp_path, monkeypatch):
     second = asyncio.run(dispatch_usage_alerts())
     assert first["sent"] >= 1
     assert second["sent"] == 0
-    assert calls
-    assert "\\n" in calls[0]
+    assert chr(10) in calls[0]
 
 
 def test_failed_notification_can_be_retried(tmp_path, monkeypatch):
@@ -71,7 +69,7 @@ def test_smtp_rejects_authenticated_cleartext_transport(monkeypatch):
     setup_smtp(monkeypatch)
     monkeypatch.setenv("SMTP_USE_TLS", "false")
     assert _smtp_settings() is None
-    assert "email" not in __import__("app.alert_notifier", fromlist=["_configured_channels"])._configured_channels()
+    assert "email" not in _configured_channels()
 
 
 def test_smtp_accepts_authenticated_starttls(monkeypatch):
