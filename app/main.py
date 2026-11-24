@@ -7,6 +7,7 @@ from .config import settings
 from .github_client import GitHubClient
 from .agent import summarize_audit, generate_fix_proposal
 from .avalai import list_avalai_models
+from .avalai_gateway import CAPABILITY_CATALOG, JSON_SURFACES, execute_avalai_surface, AvalAIRequestError
 
 app = FastAPI(title="KOROUSH CENTRAL AI", version="0.3.0", description="Private, audit-first GitHub engineering agent")
 
@@ -231,3 +232,45 @@ async def fix_proposal(
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception:
         raise HTTPException(status_code=502, detail="Fix proposal failed; check server logs")
+
+
+class AvalAIExecuteRequest(BaseModel):
+    payload: dict = Field(min_length=1)
+
+
+@app.get("/api/avalai/capabilities")
+async def avalai_capabilities(x_admin_key: str | None = Header(default=None)):
+    """List documented API surfaces and clearly label transport requirements."""
+    require_admin(x_admin_key)
+    return {
+        "provider": "avalai",
+        "json_surfaces": len(JSON_SURFACES),
+        "capabilities": CAPABILITY_CATALOG,
+        "notes": [
+            "The catalog describes documented API routes, not proof that every route/model is enabled for this account.",
+            "Every execution is checked against the authenticated model catalog when a model ID is supplied.",
+            "Multipart uploads, batch file workflows and realtime sessions need dedicated transports and are not sent through the JSON gateway.",
+        ],
+    }
+
+
+@app.post("/api/avalai/execute/{surface}")
+async def avalai_execute(
+    surface: str,
+    request: AvalAIExecuteRequest,
+    x_admin_key: str | None = Header(default=None),
+):
+    """Execute an allow-listed AvalAI JSON capability; no arbitrary URL forwarding."""
+    require_admin(x_admin_key)
+    if surface not in JSON_SURFACES:
+        raise HTTPException(status_code=404, detail="Unknown or non-JSON AvalAI capability")
+    try:
+        return await execute_avalai_surface(surface, request.payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except AvalAIRequestError as exc:
+        raise HTTPException(status_code=502, detail={"provider_status": exc.status_code, "provider_error": exc.detail})
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="AvalAI request failed; check route, model access, quota and network")
