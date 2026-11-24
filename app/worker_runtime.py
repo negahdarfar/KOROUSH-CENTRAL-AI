@@ -41,9 +41,10 @@ async def run_worker_loop() -> None:
     poll_interval = max(0.5, min(poll_interval, 30.0))
     worker_id = "central-" + str(uuid.uuid4())
     handlers = default_job_handlers()
-    heartbeat_task = asyncio.create_task(_heartbeat_loop(worker_id))
+    heartbeat_task = None
     try:
         await asyncio.to_thread(record_worker_heartbeat, worker_id, "starting")
+        heartbeat_task = asyncio.create_task(_heartbeat_loop(worker_id))
         logger.info("Durable job worker started with %d registered handler(s)", len(handlers))
         while True:
             try:
@@ -59,8 +60,9 @@ async def run_worker_loop() -> None:
         logger.info("Durable job worker shutting down")
         raise
     finally:
-        heartbeat_task.cancel()
-        try: await heartbeat_task
-        except asyncio.CancelledError: pass
+        if heartbeat_task is not None:
+            heartbeat_task.cancel()
+            try: await heartbeat_task
+            except asyncio.CancelledError: pass
         try: await asyncio.to_thread(record_worker_heartbeat, worker_id, "stopped")
         except Exception: logger.exception("Could not persist worker shutdown state")
