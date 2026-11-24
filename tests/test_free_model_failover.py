@@ -63,7 +63,7 @@ def test_transient_failure_falls_back_only_to_catalog_confirmed_free_models(monk
     assert [call["model"] for call in FakeAsyncClient.calls] == ["first-free", "second-free"]
     assert model == "second-free"
     assert data["choices"][0]["message"]["content"] == "ok"
-    assert recorded == ["second-free"]
+    assert recorded == [("avalai", "second-free")]
 
 
 async def _async_value(value):
