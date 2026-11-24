@@ -8,6 +8,13 @@ from .config import settings
 from .avalai import list_avalai_models
 from .model_router import rank_avalai_models, select_avalai_model
 from .workflow_registry import resolve_workflow_policy
+from .usage_ledger import record_usage
+
+
+def _record_chat_usage(repository: str, model: str, data: dict, response: httpx.Response, surface: str) -> None:
+    request_id = response.headers.get("avalai-request-id") or response.headers.get("x-request-id") or data.get("id")
+    record_usage(repository=repository, provider="avalai", model=model, surface=surface,
+                 usage=data.get("usage"), provider_request_id=request_id)
 
 
 async def _resolve_model(llm: dict, requested_model: str | None, *, task: str = "general", repository: str | None = None) -> str:
@@ -107,6 +114,7 @@ async def summarize_audit(inventory: dict, model: str | None = None) -> str:
         r = await client.post(url, headers={"Authorization": f"Bearer {llm['api_key']}"}, json=payload)
         r.raise_for_status()
         data = r.json()
+    _record_chat_usage(inventory.get("repository"), selected_model, data, r, "chat_completions")
     return data["choices"][0]["message"]["content"]
 
 
@@ -151,6 +159,7 @@ async def generate_fix_proposal(repository: str, task: str, snapshot: dict, mode
         )
         response.raise_for_status()
         data = response.json()
+    _record_chat_usage(repository, selected_model, data, response, "chat_completions")
     raw = data["choices"][0]["message"]["content"]
     return validate_fix_proposal(raw, allowed_paths)
 
@@ -197,6 +206,7 @@ async def generate_fix_implementation(repository: str, task: str, snapshot: dict
         )
         response.raise_for_status()
         data = response.json()
+    _record_chat_usage(repository, selected_model, data, response, "chat_completions")
     raw = data["choices"][0]["message"]["content"].strip()
     if raw.startswith("```"):
         raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.IGNORECASE)
