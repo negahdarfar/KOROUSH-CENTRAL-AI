@@ -195,7 +195,7 @@ async def diagnostics(x_admin_key: str | None = Header(default=None)):
                 "max_tokens": 5,
                 "temperature": 0,
             }
-            async with httpx.AsyncClient(timeout=httpx.Timeout(12.0, connect=5.0)) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=8.0)) as client:
                 response = await client.post(
                     url,
                     headers={"Authorization": f"Bearer {llm['api_key']}"},
@@ -207,7 +207,7 @@ async def diagnostics(x_admin_key: str | None = Header(default=None)):
         except asyncio.TimeoutError:
             result["llm"] = {"status": "timeout", "provider": llm["provider"], "message": "AvalAI catalog check exceeded 15 seconds"}
         except httpx.TimeoutException:
-            result["llm"] = {"status": "timeout", "provider": llm["provider"], "message": "LLM request exceeded 12 seconds"}
+            result["llm"] = {"status": "timeout", "provider": llm["provider"], "message": "LLM request exceeded 30 seconds"}
         except Exception:
             result["llm"] = {"status": "error", "provider": llm["provider"], "message": "LLM request failed; verify provider, key, model and available quota"}
 
