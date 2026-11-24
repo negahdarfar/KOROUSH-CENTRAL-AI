@@ -54,3 +54,20 @@ test("SDK never echoes tenant credentials in HTTP errors", async () => {
     return true;
   });
 });
+
+test("SDK validates job bounds and opaque identifiers", () => {
+  const client = new CentralAIClient({
+    baseUrl: "https://central.example",
+    tenantKey: "kor_test",
+    repository: "org/repo",
+    fetchImpl: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+  });
+  assert.throws(() => client.submitJob({
+    jobType: "chat.completion", payload: {}, idempotencyKey: "id", maxAttempts: 0,
+  }), /maxAttempts/);
+  assert.throws(() => client.submitJob({
+    jobType: "chat.completion", payload: {}, idempotencyKey: "",
+  }), /idempotencyKey/);
+  assert.throws(() => client.agent(""), /agentId/);
+  assert.throws(() => client.jobStatus(""), /jobId/);
+});
