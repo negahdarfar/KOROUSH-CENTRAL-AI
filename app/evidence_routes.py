@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Header, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .evidence_store import EvidenceConflict, EvidenceStoreError, register_evidence, list_evidence
 from .tenant_auth import authenticate_tenant_key
@@ -11,6 +11,8 @@ router = APIRouter()
 
 
 class EvidenceRecordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     repository: str = Field(min_length=3, max_length=201)
     domain: str = Field(pattern=r"^(forex|youtube|ptc|nft)$")
     source_id: str = Field(min_length=1, max_length=80)
