@@ -124,6 +124,25 @@ class CentralAIClient:
             },
         )
 
+    async def submit_agent(
+        self,
+        *,
+        agent_id: str,
+        payload: dict,
+        idempotency_key: str,
+        max_attempts: int = 5,
+    ) -> dict:
+        if not isinstance(agent_id, str) or not agent_id or len(agent_id) > 128:
+            raise ValueError("agent_id must be non-empty text up to 128 characters")
+        if not isinstance(payload, dict):
+            raise ValueError("payload must be an object")
+        return await self.submit_job(
+            job_type="agent.execute",
+            payload={"agent_id": agent_id, **payload},
+            idempotency_key=idempotency_key,
+            max_attempts=max_attempts,
+        )
+
     async def job_status(self, job_id: str) -> dict:
         if not isinstance(job_id, str) or not job_id or len(job_id) > 128:
             raise ValueError("job_id must be non-empty text up to 128 characters")
