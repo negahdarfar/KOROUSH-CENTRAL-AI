@@ -13,7 +13,9 @@ def test_platform_manifest_is_non_secret_and_marks_incomplete_transports():
     assert manifest["integration_model"] == "central-control-plane"
     assert manifest["contract"]["job_submission"] == "POST /api/jobs"
     assert any(api["id"] == "jobs.enqueue" for api in manifest["apis"])
-    assert any(api["id"] == "github.repair.apply" for api in manifest["apis"])
+    assert any(api["id"] == "apis.catalog" for api in manifest["apis"])
+    assert not any(api["id"] == "github.repair.apply" for api in manifest["apis"])
+    assert not any(api["auth"] == "admin" for api in manifest["apis"])
     providers = {item["id"]: item["status"] for item in manifest["providers"]}
     assert providers["avalai"] == "limited"
     assert providers["openrouter"] == "planned"
