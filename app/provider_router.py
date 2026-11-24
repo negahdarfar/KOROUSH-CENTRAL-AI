@@ -100,8 +100,10 @@ async def chat_completion(
     policy = policy or {}
     providers = configured_chat_providers(active_llm, policy.get("provider_order"))
     # The AvalAI model was already checked against its live catalog by _resolve_model.
-    if policy.get("free_only") and providers and providers[0]["provider"] == "avalai":
-        providers[0]["cost_class"] = "free"
+    if policy.get("free_only"):
+        for provider in providers:
+            if provider["provider"] == "avalai":
+                provider["cost_class"] = "free"
     if not providers:
         raise RuntimeError("No configured chat provider is available")
 
