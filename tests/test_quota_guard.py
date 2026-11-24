@@ -38,7 +38,7 @@ def test_token_quota_uses_preflight_estimate_and_alerts_are_deduplicated(tmp_pat
         "tokens_per_day": 100,
         "tokens_per_month": 1000,
     })
-    reservation = reserve_inference("org/repo", {"input": "x" * 65})
+    reservation = reserve_inference("org/repo", {"input": "x" * 300})
     alerts = list_usage_alerts()
     assert any(item["metric"] == "tokens_day" and item["threshold"] == 70 for item in alerts)
     complete_reservation(reservation, 80)
