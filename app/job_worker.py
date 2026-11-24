@@ -48,12 +48,18 @@ async def run_once(worker_id: str, handlers: dict[str, JobHandler],
         result_ref = put_payload({"result": result}) if result is not None else None
         if not finish_job(job_id, worker_id, result_ref=result_ref):
             if result_ref:
-                delete_payload(result_ref)
+                try:
+                    delete_payload(result_ref)
+                except Exception:
+                    logger.warning("Could not delete fenced result payload", exc_info=True)
             logger.warning("Job completion fenced: lease is no longer owned")
             return "lease_lost"
         # Delete the input only after fenced completion succeeds; a lease-losing
         # worker must leave it intact for the legitimate lease owner/reclaimer.
-        delete_payload(job["payload_ref"])
+        try:
+            delete_payload(job["payload_ref"])
+        except Exception:
+            logger.warning("Completed job input payload cleanup failed", exc_info=True)
         return "succeeded"
     except asyncio.CancelledError:
         # Leave the lease to expire so another worker can safely reclaim it.
