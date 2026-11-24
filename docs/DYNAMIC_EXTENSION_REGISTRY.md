@@ -4,7 +4,7 @@ The central hub supports registering and discovering new agent, model, tool, API
 
 ## Admin registration
 
-`POST /api/extensions` requires `X-Admin-Key` and accepts a versioned JSON manifest. The registry stores metadata in the same SQLite database path selected by `USAGE_DB_PATH`. Re-registering the same extension ID and version updates that exact version; publishing a new version creates a separate record.
+`POST /api/extensions` requires `X-Admin-Key` and accepts a versioned JSON manifest. The registry stores metadata in the same SQLite database path selected by `USAGE_DB_PATH`. Re-registering an identical extension ID and version is idempotent; changing a published manifest requires a new version and creates a separate immutable record.
 
 ## Tenant discovery
 
