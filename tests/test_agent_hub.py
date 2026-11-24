@@ -142,3 +142,14 @@ def test_tenant_api_catalog_requires_both_job_and_inference_scopes(monkeypatch):
         repository="org/repo", x_tenant_key="kor_test", x_admin_key=None
     ))
     assert "jobs.enqueue" not in {item["id"] for item in result["apis"]}
+
+
+def test_platform_manifest_exposes_contract_only_source_connectors():
+    from app.agent_registry import platform_manifest
+
+    manifest = platform_manifest()
+    connectors = manifest["source_connectors"]
+    assert connectors
+    assert all(item["status"] == "contract-only" for item in connectors)
+    assert all(item["outbound_fetch_enabled"] is False for item in connectors)
+    assert any(item["protocol"] == "youtube-data-api" for item in connectors)
