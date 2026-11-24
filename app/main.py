@@ -95,7 +95,10 @@ document.getElementById('check').addEventListener('click',async()=>{
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),50000);
   let r;
-  try{r=await fetch('/api/diagnostics',{headers:headers(),signal:controller.signal});}
+  const chosenModel=document.getElementById('model').value;
+  const diagnosticsUrl=new URL('/api/diagnostics',window.location.origin);
+  if(chosenModel)diagnosticsUrl.searchParams.set('model',chosenModel);
+  try{r=await fetch(diagnosticsUrl.toString(),{headers:headers(),signal:controller.signal});}
   finally{clearTimeout(timer);}
   const data=await r.json();out.textContent=JSON.stringify(data,null,2);
   if(r.status===401){adminKey='';out.textContent='کلید پذیرفته نشد. مقدار ADMIN_API_KEY در Railway را بررسی کنید.';}
@@ -158,7 +161,10 @@ document.getElementById('propose').addEventListener('click',async()=>{
 
 
 @app.get("/api/diagnostics")
-async def diagnostics(x_admin_key: str | None = Header(default=None)):
+async def diagnostics(
+    x_admin_key: str | None = Header(default=None),
+    model: str | None = Query(default=None, min_length=1, max_length=200),
+):
     require_admin(x_admin_key)
     result = {
         "service": "ok",
@@ -184,10 +190,15 @@ async def diagnostics(x_admin_key: str | None = Header(default=None)):
         }
     else:
         try:
-            selected_model = llm["model"]
-            if llm["provider"] == "avalai" and not selected_model:
+            selected_model = model or llm["model"]
+            model_selection = "request" if model else ("configured" if llm["model"] else "catalog_auto")
+            if llm["provider"] == "avalai":
                 catalog = await asyncio.wait_for(list_avalai_model_catalog(), timeout=15)
-                selected_model = select_avalai_model(catalog, task="general")
+                available_models = {item["id"] for item in catalog}
+                if selected_model and selected_model not in available_models:
+                    raise ValueError("Requested model is not available to this AvalAI API key")
+                if not selected_model:
+                    selected_model = select_avalai_model(catalog, task="general")
             url = llm["base_url"] + "/chat/completions"
             payload = {
                 "model": selected_model,
@@ -203,13 +214,17 @@ async def diagnostics(x_admin_key: str | None = Header(default=None)):
                 )
                 response.raise_for_status()
                 response.json()
-            result["llm"] = {"status": "ok", "provider": llm["provider"], "model": selected_model, "model_selection": "catalog_auto" if llm["provider"] == "avalai" and not llm["model"] else "configured"}
+            result["llm"] = {"status": "ok", "provider": llm["provider"], "model": selected_model, "model_selection": model_selection}
         except asyncio.TimeoutError:
             result["llm"] = {"status": "timeout", "provider": llm["provider"], "message": "AvalAI catalog check exceeded 15 seconds"}
         except httpx.TimeoutException:
-            result["llm"] = {"status": "timeout", "provider": llm["provider"], "message": "LLM request exceeded 30 seconds"}
+            result["llm"] = {"status": "timeout", "provider": llm["provider"], "model": selected_model if "selected_model" in locals() else None, "message": "LLM request exceeded 30 seconds"}
+        except ValueError as exc:
+            result["llm"] = {"status": "error", "provider": llm["provider"], "model": selected_model if "selected_model" in locals() else None, "message": str(exc)}
+        except httpx.HTTPStatusError as exc:
+            result["llm"] = {"status": "error", "provider": llm["provider"], "model": selected_model if "selected_model" in locals() else None, "provider_status": exc.response.status_code, "message": "AvalAI rejected the chat request; check model access, key and quota"}
         except Exception:
-            result["llm"] = {"status": "error", "provider": llm["provider"], "message": "LLM request failed; verify provider, key, model and available quota"}
+            result["llm"] = {"status": "error", "provider": llm["provider"], "model": selected_model if "selected_model" in locals() else None, "message": "LLM request failed; verify provider, key, model and available quota"}
 
     return result
 
