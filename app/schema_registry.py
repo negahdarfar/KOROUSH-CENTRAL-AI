@@ -10,11 +10,14 @@ MAX_BYTES, MAX_DEPTH, MAX_NODES = 16384, 12, 256
 class SchemaValidationError(ValueError):
     pass
 
-def _size(value: Any) -> int:
+def _canonical(value: Any) -> str:
     try:
-        return len(json.dumps(value, ensure_ascii=True, separators=(",", ":")).encode("utf-8"))
+        return json.dumps(value, sort_keys=True, ensure_ascii=True, separators=(",", ":"), allow_nan=False)
     except (TypeError, ValueError) as exc:
-        raise SchemaValidationError("value must be JSON serializable") from exc
+        raise SchemaValidationError("value must be a finite JSON value") from exc
+
+def _size(value: Any) -> int:
+    return len(_canonical(value).encode("utf-8"))
 
 def validate_schema(schema: Any) -> dict:
     if not isinstance(schema, dict) or _size(schema) > MAX_BYTES:
@@ -37,14 +40,17 @@ def validate_schema(schema: Any) -> dict:
             raise SchemaValidationError("description must be text up to 300 characters")
         if "enum" in node:
             values = node["enum"]
-            if not isinstance(values, list) or not 1 <= len(values) <= 100 or len({_size(v) for v in values}) != len(values):
+            if not isinstance(values, list) or not 1 <= len(values) <= 100:
+                raise SchemaValidationError("enum must contain 1 to 100 distinct JSON values")
+            canonical = [_canonical(v) for v in values]
+            if len(set(canonical)) != len(canonical):
                 raise SchemaValidationError("enum must contain 1 to 100 distinct JSON values")
         for key in ("minLength","maxLength","minItems","maxItems"):
             if key in node and (isinstance(node[key], bool) or not isinstance(node[key], int) or not 0 <= node[key] <= 100000):
                 raise SchemaValidationError(f"{key} must be an integer from 0 to 100000")
         for key in ("minimum","maximum"):
-            if key in node and (isinstance(node[key], bool) or not isinstance(node[key], (int,float))):
-                raise SchemaValidationError(f"{key} must be numeric")
+            if key in node and (isinstance(node[key], bool) or not isinstance(node[key], (int,float)) or not __import__("math").isfinite(node[key])):
+                raise SchemaValidationError(f"{key} must be finite numeric")
         if "minimum" in node and "maximum" in node and node["minimum"] > node["maximum"]:
             raise SchemaValidationError("minimum cannot exceed maximum")
         if kind == "object":
@@ -86,9 +92,10 @@ def validate_instance(schema: dict, value: Any) -> None:
     validate_schema(schema)
     def check(node: dict, current: Any, path: str, depth: int) -> None:
         if depth > MAX_DEPTH: raise SchemaValidationError(f"{path}: value nesting is too deep")
+        if _size(current) > MAX_BYTES: raise SchemaValidationError(f"{path}: value exceeds 16 KiB")
         kind=node["type"]
         if not _matches(current,kind): raise SchemaValidationError(f"{path}: expected {kind}")
-        if "enum" in node and current not in node["enum"]: raise SchemaValidationError(f"{path}: value is not in enum")
+        if "enum" in node and _canonical(current) not in {_canonical(v) for v in node["enum"]}: raise SchemaValidationError(f"{path}: value is not in enum")
         if kind=="object":
             props=node.get("properties",{})
             if set(node.get("required",[]))-set(current): raise SchemaValidationError(f"{path}: missing required properties")
@@ -101,7 +108,7 @@ def validate_instance(schema: dict, value: Any) -> None:
         elif kind=="string":
             if len(current)<node.get("minLength",0) or len(current)>node.get("maxLength",100000): raise SchemaValidationError(f"{path}: string length is out of bounds")
         elif kind in {"integer","number"}:
-            if current < node.get("minimum",float("-inf")) or current > node.get("maximum",float("inf")): raise SchemaValidationError(f"{path}: number is out of bounds")
+            if current < node.get("minimum,float('-inf')) or current > node.get("maximum",float("inf")): raise SchemaValidationError(f"{path}: number is out of bounds")
     check(schema,value,"$",0)
 
 def compatibility_report(old_schema: dict, new_schema: dict) -> dict:
@@ -111,7 +118,7 @@ def compatibility_report(old_schema: dict, new_schema: dict) -> dict:
     def compare(old: dict,new: dict,path: str) -> None:
         if old["type"]!=new["type"] and not (old["type"]=="integer" and new["type"]=="number"):
             reasons.append(f"{path}: type changed"); return
-        if "enum" in new and ("enum" not in old or not {_size(v) for v in old["enum"]}.issubset({_size(v) for v in new["enum"]})):
+        if "enum" in new and ("enum" not in old or not {_canonical(v) for v in old["enum"]}.issubset({_canonical(v) for v in new["enum"]})):
             reasons.append(f"{path}: enum may reject previously valid values")
         if old["type"]=="object" and new["type"]=="object":
             if not set(new.get("required",[])).issubset(set(old.get("required",[]))): reasons.append(f"{path}: new required property added")
