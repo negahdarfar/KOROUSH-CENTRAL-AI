@@ -19,15 +19,19 @@ These repositories were identified as candidates for staged integration. This is
 2. Issue separate tenant credentials per repository (or per independently trusted service), with only the scopes it needs.
 3. Add `KOROUSH_CENTRAL_URL` and `KOROUSH_TENANT_API_KEY` to that repository's secret manager. Never commit credentials.
 4. Install the matching SDK (Python or Node) and first call `manifest()`, `agents()`, and `apis()` as read-only discovery checks.
-5. Move one low-risk, non-financial, non-publishing AI task to `chat.completion` jobs. Use a stable idempotency key for every logical operation.
-6. Verify tenant isolation, quota accounting, encrypted job payload lifecycle, logs, retry behavior, and real deployed readiness.
-7. Only after a repository's integration PR and production checks pass, disable its old duplicate provider integration. Keep rollback available until then.
+5. Use `sync_extensions()` (Python) or `syncExtensions()` (Node) to read a repository-filtered registry snapshot. This is metadata-only: it does not install, import, or execute remote extensions.
+6. If the tenant key is explicitly granted event scopes, use `publish_event()` / `publishEvent()`. A separately operated consumer can claim and settle events. Delivery is at-least-once; consumers must be idempotent.
+7. Move one low-risk, non-financial, non-publishing AI task to `chat.completion` jobs. Use a stable idempotency key for every logical operation.
+8. Verify tenant isolation, quota accounting, encrypted job payload lifecycle, logs, retry behavior, and real deployed readiness.
+9. Only after a repository's integration PR and production checks pass, disable its old duplicate provider integration. Keep rollback available until then.
 
 ## Credential scopes
 
 - `inference:chat`: synchronous tenant inference where the specific endpoint supports it.
 - `jobs:enqueue`: submit supported durable jobs.
 - `jobs:read`: read status/results for jobs owned by the same tenant identity.
+- `registry:read`: discover extension metadata for the assigned repository.
+- `events:publish`, `events:consume`, `events:read`: separately grant event publication, consumption, and metadata inspection. These are never added to existing keys automatically.
 
 For the durable job API, issue both `jobs:enqueue` and `jobs:read` if the service needs submission and polling. The default tenant-key scope is only `inference:chat`, so do not assume a newly created key can enqueue jobs.
 
@@ -57,4 +61,4 @@ The public platform manifest now includes four version-1 integration profiles: `
 | PTC | Site-review summaries, offer-risk classification, earnings-data analysis | Automated clicking, account login, CAPTCHA bypass, payouts |
 | NFT | Collection research, metadata review, valuation-report drafts | Wallet signing, on-chain transactions, marketplace listing |
 
-All profiles currently advertise `execution: not-enabled`. Domain-specific agents and downstream repository adapters must be implemented and tested in separate PRs. A profile is not proof that an operation is implemented or safe for production. The central manifest is discovery metadata, not an authorization grant; actual permissions remain enforced by repository-bound tenant keys and API scopes.
+All profiles currently advertise `execution: not-enabled`. Domain-specific agents and downstream repository adapters must be implemented and tested in separate PRs. A profile is not proof that an operation is implemented or safe for production. The central manifest is discovery metadata, not an authorization grant; actual permissions remain enforced by repository-bound tenant keys and API scopes. The Python and Node SDKs expose opt-in read-only extension snapshots and explicit event operations. They do not auto-sync code, install extensions, change repository files, or execute remote tools.
