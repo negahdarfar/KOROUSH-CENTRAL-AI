@@ -33,3 +33,13 @@ def test_coding_route_prefers_coding_model_when_account_has_it():
         {"id": "gpt-5.3-codex", "mode": "chat"},
     ]
     assert select_avalai_model(catalog, task="coding") == "gpt-5.3-codex"
+
+
+
+def test_fast_route_prefers_fast_model_when_account_has_it():
+    catalog = [
+        {"id": "gpt-6.1-sol", "mode": "chat"},
+        {"id": "gpt-6-luna", "mode": "chat"},
+        {"id": "claude-haiku-5-5", "mode": "chat"},
+    ]
+    assert select_avalai_model(catalog, task="fast") == "gpt-6-luna"
