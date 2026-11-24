@@ -1,0 +1,7 @@
+# Controlled dead-letter recovery
+
+Operators may requeue a single dead-letter job through POST /api/admin/jobs/{job_id}/requeue. The endpoint requires the operator ADMIN_API_KEY, an explicit confirm=true value, the exact repository, and the job's current updated_at value as an optimistic concurrency token.
+
+Recovery is refused if the job is not dead-lettered, its row changed since it was inspected, its encrypted payload is missing or expired, or the job has already been manually requeued three times. A successful recovery resets the per-attempt counter, increments a separate manual_requeues counter, clears the prior error code, and makes the job eligible for normal worker claiming. Normal tenant authorization, model routing, quota reservation, provider price evidence, and worker lease fencing still apply during execution.
+
+The endpoint does not expose payload contents or references. It returns only job metadata required to confirm the state transition. This is an operator recovery control, not an automatic retry bypass or a way to override tenant policy.
