@@ -104,6 +104,10 @@ async def api_catalog(
             continue
         if auth == "tenant:jobs:read" and "jobs:read" not in scopes:
             continue
+        if auth == "tenant:evidence:write" and "evidence:write" not in scopes:
+            continue
+        if auth == "tenant:evidence:read" and "evidence:read" not in scopes:
+            continue
         if auth == "tenant-or-admin" and "inference:chat" not in scopes:
             continue
         visible.append(api)
