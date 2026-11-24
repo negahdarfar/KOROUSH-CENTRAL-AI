@@ -19,29 +19,30 @@ from .tenant_routes import router as tenant_auth_router
 from .tenant_auth import TenantAuthError, authorize_tenant_inference
 from .alert_notifier import dispatch_usage_alerts, run_alert_worker
 
-app = FastAPI(title="KOROUSH CENTRAL AI", version="0.3.0", description="Private, audit-first GitHub engineering agent")
-app.include_router(tenant_auth_router)
-
-_alert_worker_task: asyncio.Task | None = None
+from contextlib import asynccontextmanager
 
 
-@app.on_event("startup")
-async def start_usage_alert_worker():
-    global _alert_worker_task
-    if _alert_worker_task is None or _alert_worker_task.done():
-        _alert_worker_task = asyncio.create_task(run_alert_worker())
-
-
-@app.on_event("shutdown")
-async def stop_usage_alert_worker():
-    global _alert_worker_task
-    if _alert_worker_task is not None:
-        _alert_worker_task.cancel()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Own the notification worker lifecycle using FastAPI's supported lifespan API."""
+    worker_task = asyncio.create_task(run_alert_worker())
+    try:
+        yield
+    finally:
+        worker_task.cancel()
         try:
-            await _alert_worker_task
+            await worker_task
         except asyncio.CancelledError:
             pass
-        _alert_worker_task = None
+
+
+app = FastAPI(
+    title="KOROUSH CENTRAL AI",
+    version="0.3.0",
+    description="Private, audit-first GitHub engineering agent",
+    lifespan=lifespan,
+)
+app.include_router(tenant_auth_router)
 
 
 
