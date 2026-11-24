@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field
 from fastapi.responses import HTMLResponse
 from .config import settings
 from .github_client import GitHubClient
-from .agent import summarize_audit, generate_fix_proposal
+from .agent import summarize_audit, generate_fix_proposal, generate_fix_implementation
+from .github_writer import publish_changes
 from .avalai import list_avalai_models, list_avalai_model_catalog
 from .model_router import select_avalai_model
 from .avalai_gateway import CAPABILITY_CATALOG, JSON_SURFACES, execute_avalai_surface, AvalAIRequestError
@@ -17,6 +18,13 @@ app = FastAPI(title="KOROUSH CENTRAL AI", version="0.3.0", description="Private,
 class FixProposalRequest(BaseModel):
     task: str = Field(min_length=8, max_length=4000)
     model: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+
+class FixApplyRequest(BaseModel):
+    task: str = Field(min_length=8, max_length=4000)
+    model: str | None = Field(default=None, min_length=1, max_length=200)
+    confirm: bool = False
 
 
 gh = GitHubClient()
@@ -80,9 +88,12 @@ small{color:#b9c6d8}
 <input id="owner" value="negahdarfar" placeholder="GitHub owner">
 <input id="repo" placeholder="نام مخزن">
 <textarea id="task" placeholder="شرح دقیق خطا یا اصلاح موردنیاز (حداقل ۸ نویسه)"></textarea>
-<button id="propose">تحلیل و تولید پیشنهاد اصلاح (بدون اعمال تغییر)</button>
+<button id="propose">تحلیل و آماده‌سازی اصلاحات پیشنهادی</button>
 <pre id="proposal">ابتدا اتصال را آزمایش کنید.</pre>
-<small>پیشنهادها فقط نمایش داده می‌شوند؛ هیچ فایلی خودکار تغییر نمی‌کند. پس از پایان، صفحه را ببندید.</small></main>
+<label><input id="confirmApply" type="checkbox" style="width:auto"> تأیید می‌کنم اصلاحات روی شاخه جدید GitHub ثبت و Pull Request آزمایشی ساخته شود.</label>
+<button id="applyFix">تأیید و ایجاد شاخه + Draft Pull Request</button>
+<pre id="applyResult">هیچ تغییری بدون تأیید صریح شما ثبت نمی‌شود.</pre>
+<small>شاخه اصلی هرگز مستقیماً تغییر نمی‌کند و Pull Request به‌صورت Draft ساخته می‌شود؛ ادغام خودکار انجام نمی‌شود.</small></main>
 <script>
 let adminKey='';
 const headers=()=>({'X-Admin-Key':adminKey});
@@ -156,6 +167,25 @@ document.getElementById('propose').addEventListener('click',async()=>{
   const r=await fetch(url,{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify(body)});
   const data=await r.json();out.textContent=JSON.stringify(data,null,2);
  }catch(e){out.textContent='خطا در ارتباط: '+e.message;}
+});
+document.getElementById('applyFix').addEventListener('click',async()=>{
+ const owner=document.getElementById('owner').value.trim();
+ const repo=document.getElementById('repo').value.trim();
+ const task=document.getElementById('task').value.trim();
+ const model=document.getElementById('model').value;
+ const out=document.getElementById('applyResult');
+ if(!adminKey){out.textContent='ابتدا اتصال مدیریتی را آزمایش کنید.';return;}
+ if(!owner||!repo||task.length<8){out.textContent='مالک، مخزن و شرح درخواست را کامل کنید.';return;}
+ if(!document.getElementById('confirmApply').checked){out.textContent='برای ثبت تغییرات، تأیید صریح را فعال کنید.';return;}
+ if(!confirm('اصلاحات AI روی شاخه جدید ثبت و یک Draft Pull Request ساخته شود؟'))return;
+ out.textContent='در حال تولید نسخه کامل فایل‌ها و ثبت امن در شاخه جدید...';
+ try{
+  const body={task,confirm:true};if(model)body.model=model;
+  const r=await fetch('/api/fix-apply/'+encodeURIComponent(owner)+'/'+encodeURIComponent(repo),{
+   method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify(body)
+  });
+  const data=await r.json();out.textContent=JSON.stringify(data,null,2);
+ }catch(e){out.textContent='خطا در اجرای اصلاح: '+e.message;}
 });
 </script></html>""")
 
@@ -301,6 +331,49 @@ async def fix_proposal(
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception:
         raise HTTPException(status_code=502, detail="Fix proposal failed; check server logs")
+
+
+@app.post("/api/fix-apply/{owner}/{repo}")
+async def fix_apply(
+    owner: str,
+    repo: str,
+    request: FixApplyRequest,
+    x_admin_key: str | None = Header(default=None),
+):
+    """Generate replacements and publish them on a new branch only after explicit confirmation."""
+    require_admin(x_admin_key)
+    if request.confirm is not True:
+        raise HTTPException(status_code=400, detail="Explicit confirmation is required before writing to GitHub")
+    full_name = f"{owner}/{repo}"
+    try:
+        snapshot = await gh.get_repo_snapshot(full_name)
+        implementation = await generate_fix_implementation(full_name, request.task, snapshot, model=request.model)
+        if not implementation["files"]:
+            return {"repository": full_name, "applied": False, "mode": "no_changes", "implementation": implementation}
+        published = await publish_changes(
+            full_name, implementation["files"], implementation["summary"],
+            implementation["tests_to_run"], snapshot["default_branch"]
+        )
+        return {
+            "repository": full_name,
+            "applied": True,
+            "mode": "branch_and_draft_pull_request",
+            "model": implementation["model"],
+            "summary": implementation["summary"],
+            "findings": implementation["findings"],
+            "tests_to_run": implementation["tests_to_run"],
+            **published,
+        }
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=502, detail=f"GitHub rejected the branch, commit, or pull request operation (HTTP {exc.response.status_code})")
+    except Exception:
+        raise HTTPException(status_code=502, detail="AI repair publishing failed; check service logs")
 
 
 class AvalAIExecuteRequest(BaseModel):
