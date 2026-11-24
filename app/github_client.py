@@ -1,4 +1,53 @@
 import httpx
+
+import re
+
+
+BLOCKED_AUDIT_PARTS = (
+    ".git/", "node_modules/", ".venv/", "__pycache__/", "dist/", "build/",
+    ".terraform/", "vendor/", "coverage/"
+)
+SAFE_AUDIT_SUFFIXES = {
+    ".py", ".js", ".ts", ".tsx", ".jsx", ".json", ".toml", ".yaml",
+    ".yml", ".md", ".txt", ".html", ".css", ".sh", ".sql", ".pine"
+}
+BLOCKED_AUDIT_NAMES = {
+    ".env", ".env.local", ".env.production", "id_rsa", "id_ed25519",
+    "credentials.json", "secrets.json"
+}
+
+
+def is_audit_candidate(item: dict) -> bool:
+    path = item.get("path", "")
+    lower = path.lower()
+    name = lower.rsplit("/", 1)[-1]
+    suffix = "." + name.rsplit(".", 1)[-1] if "." in name else ""
+    if item.get("type") != "blob" or not path or name in BLOCKED_AUDIT_NAMES:
+        return False
+    if any(part in lower for part in BLOCKED_AUDIT_PARTS):
+        return False
+    if name.startswith(".env") or any(term in name for term in ("secret", "credential", "token", "private_key")):
+        return False
+    if suffix not in SAFE_AUDIT_SUFFIXES and name not in {"dockerfile", "makefile"}:
+        return False
+    size = item.get("size")
+    if size is not None and size > 1_000_000:
+        return False
+    return True
+
+
+def redact_secrets(content: str) -> str:
+    patterns = [
+        (r"(?i)(api[_-]?key|secret|password|access[_-]?token)\\s*[:=]\\s*['\\\"]?[^\\s'\\\"]{8,}", r"\\1=[REDACTED]"),
+        (r"\\bgh[pousr]_[A-Za-z0-9_]{20,}\\b", "[REDACTED_GITHUB_TOKEN]"),
+        (r"\\bgithub_pat_[A-Za-z0-9_]{20,}\\b", "[REDACTED_GITHUB_TOKEN]"),
+        (r"\\bAKIA[0-9A-Z]{16}\\b", "[REDACTED_AWS_KEY]"),
+        (r"\\bsk-[A-Za-z0-9_-]{20,}\\b", "[REDACTED_API_KEY]"),
+    ]
+    for pattern, replacement in patterns:
+        content = re.sub(pattern, replacement, content)
+    return content
+
 from .config import settings
 
 API = "https://api.github.com"
@@ -95,29 +144,7 @@ class GitHubClient:
         import base64
 
         inventory = await self.get_repo_tree(full_name)
-        safe_suffixes = {
-            ".py", ".js", ".ts", ".tsx", ".jsx", ".json", ".toml", ".yaml",
-            ".yml", ".md", ".txt", ".html", ".css", ".sh", ".sql", ".pine"
-        }
-        blocked_names = {
-            ".env", ".env.local", ".env.production", "id_rsa", "id_ed25519",
-            "credentials.json", "secrets.json"
-        }
-        selected = []
-        for item in inventory["tree"]:
-            path = item.get("path", "")
-            lower = path.lower()
-            name = lower.rsplit("/", 1)[-1]
-            suffix = "." + name.rsplit(".", 1)[-1] if "." in name else ""
-            if item.get("type") != "blob" or name in blocked_names:
-                continue
-            if any(part in lower for part in (".git/", "node_modules/", ".venv/", "__pycache__/", "dist/", "build/")):
-                continue
-            if name.startswith(".env") or "secret" in name or "credential" in name or "token" in name or "private_key" in name:
-                continue
-            if suffix not in safe_suffixes and name not in {"dockerfile", "makefile"}:
-                continue
-            selected.append(path)
+        selected = [item["path"] for item in inventory["tree"] if is_audit_candidate(item)]
 
         files = []
         total_chars = 0
@@ -137,7 +164,7 @@ class GitHubClient:
                     content = base64.b64decode(payload["content"]).decode("utf-8", errors="replace")
                 except Exception:
                     continue
-                content = content[:max_chars_per_file]
+                content = redact_secrets(content[:max_chars_per_file])
                 if total_chars + len(content) > 100000:
                     break
                 files.append({"path": path, "content": content})
