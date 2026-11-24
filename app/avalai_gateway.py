@@ -5,11 +5,17 @@ capabilities and are not falsely exposed through this JSON-only endpoint.
 """
 from __future__ import annotations
 
+import logging
+
 import httpx
 
 from .config import settings
 from .avalai import list_avalai_model_catalog
-from .model_router import select_avalai_model
+from .model_router import rank_avalai_models
+from .usage_ledger import record_usage, normalize_usage
+from .quota_guard import reserve_inference, complete_reservation, cancel_reservation
+
+logger = logging.getLogger(__name__)
 
 
 # Only fixed relative paths are allowed. Callers cannot choose arbitrary URLs.
@@ -35,6 +41,9 @@ UPLOAD_CAPABILITIES = [
     {"name": "files", "path": "/files", "group": "files", "transport": "multipart_upload", "description": "File upload and management"},
 ]
 
+ZERO_BUDGET_SAFE_SURFACES = frozenset({"chat_completions"})
+
+
 CAPABILITY_CATALOG = [
     {"name": name, **details, "transport": "json"}
     for name, details in JSON_SURFACES.items()
@@ -44,57 +53,95 @@ CAPABILITY_CATALOG = [
 ]
 
 
-async def execute_avalai_surface(surface: str, payload: dict) -> dict:
+def require_approved_repository(repository: str | None, allowlist: set[str]) -> str:
+    """Bind gateway quota identity to an operator-approved repository allowlist."""
+    approved = {item.strip().lower() for item in allowlist if item.strip()}
+    normalized = (repository or "").strip().lower()
+    if not approved:
+        raise RuntimeError("Inference is disabled until ALLOWED_REPOS explicitly lists approved owner/repository identities")
+    if normalized not in approved:
+        raise ValueError("Repository is not explicitly approved in ALLOWED_REPOS for inference quota accounting")
+    if normalized.count("/") != 1 or any(part in {"", ".", ".."} for part in normalized.split("/")):
+        raise ValueError("Repository identity must use owner/repository format")
+    return normalized
+
+
+async def execute_avalai_surface(surface: str, payload: dict, repository: str | None = None) -> dict:
     """Send one JSON request to a fixed AvalAI route; never accept a caller URL."""
     if surface not in JSON_SURFACES:
         raise ValueError("Unsupported or non-JSON AvalAI capability")
+    if surface not in ZERO_BUDGET_SAFE_SURFACES:
+        raise ValueError(
+            "This capability is disabled by the USD 0.00 policy: provider metadata does not independently prove zero cost for this API surface"
+        )
     llm = settings.active_llm
     if llm["provider"] != "avalai" or not llm["api_key"] or not llm["base_url"]:
         raise RuntimeError("AvalAI provider is not configured")
 
+    normalized_repository = require_approved_repository(repository, settings.repo_allowlist)
+
     body = dict(payload)
     model = body.get("model")
     catalog = await list_avalai_model_catalog()
-    available = {item["id"] for item in catalog}
+    eligible = rank_avalai_models(catalog, task="general", free_only=True, allow_unknown_cost=False, allow_paid=False)
+    eligible_ids = {item["id"] for item in eligible}
     if model is not None:
         if not isinstance(model, str) or not model.strip():
             raise ValueError("Model must be a non-empty model ID")
-        if model not in available:
-            raise ValueError("Requested model is not available to this AvalAI API key")
+        if model not in eligible_ids:
+            raise ValueError("Requested model is blocked: zero-dollar policy permits only catalog-confirmed free models")
     else:
         configured = llm.get("model")
         if configured:
-            if configured not in available:
-                raise ValueError("AVALAI_MODEL is not available to this AvalAI API key")
+            if configured not in eligible_ids:
+                raise ValueError("AVALAI_MODEL is blocked by the zero-dollar policy; clear it or choose a catalog-confirmed free model")
             model = configured
         else:
-            model = select_avalai_model(catalog, task="general")
+            if not eligible:
+                raise RuntimeError("No catalog-confirmed free chat model is available under the zero-dollar policy")
+            model = eligible[0]["id"]
         body["model"] = model
 
     route = JSON_SURFACES[surface]["path"]
     url = llm["base_url"].rstrip("/") + route
     timeout = httpx.Timeout(180.0, connect=20.0)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.post(
-            url,
-            headers={"Authorization": f"Bearer {llm['api_key']}", "Content-Type": "application/json"},
-            json=body,
-        )
-        if not response.is_success:
-            # Return a bounded provider error, never credentials or request headers.
-            detail = response.text[:3000]
-            raise AvalAIRequestError(response.status_code, detail)
-        try:
-            data = response.json()
-        except ValueError as exc:
-            raise RuntimeError("AvalAI returned a non-JSON response on a JSON surface") from exc
-        return {
-            "provider": "avalai",
-            "surface": surface,
-            "model": model,
-            "request_id": response.headers.get("avalai-request-id") or response.headers.get("x-request-id"),
-            "result": data,
-        }
+    reservation_id = reserve_inference(normalized_repository, body)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(
+                url,
+                headers={"Authorization": f"Bearer {llm['api_key']}", "Content-Type": "application/json"},
+                json=body,
+            )
+            if not response.is_success:
+                detail = response.text[:3000]
+                raise AvalAIRequestError(response.status_code, detail)
+            try:
+                data = response.json()
+            except ValueError as exc:
+                raise RuntimeError("AvalAI returned a non-JSON response on a JSON surface") from exc
+            request_id = response.headers.get("avalai-request-id") or response.headers.get("x-request-id") or data.get("id")
+            prompt_tokens, completion_tokens, total_tokens = normalize_usage(data.get("usage"))
+            try:
+                record_usage(repository=normalized_repository, provider="avalai", model=model, surface=surface,
+                             usage=data.get("usage"), provider_request_id=request_id)
+            except Exception:
+                logger.exception("Usage ledger write failed after successful gateway inference")
+            try:
+                complete_reservation(reservation_id, total_tokens or prompt_tokens + completion_tokens)
+            except Exception:
+                logger.exception("Quota reservation finalization failed; reservation will expire conservatively")
+            reservation_id = None
+            return {
+                "provider": "avalai",
+                "surface": surface,
+                "model": model,
+                "request_id": response.headers.get("avalai-request-id") or response.headers.get("x-request-id"),
+                "result": data,
+            }
+    finally:
+        if reservation_id:
+            cancel_reservation(reservation_id)
 
 
 class AvalAIRequestError(Exception):

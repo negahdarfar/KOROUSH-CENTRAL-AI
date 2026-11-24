@@ -13,8 +13,8 @@ from copy import deepcopy
 _DEFAULTS = {
     "provider_order": ["avalai"],
     "free_first": True,
-    "free_only": False,
-    "allow_unknown_cost": True,
+    "free_only": True,
+    "allow_unknown_cost": False,
     "allow_paid": False,
     "max_retries": 1,
     "task": "general",
@@ -35,6 +35,10 @@ def _clean_policy(raw: object) -> dict:
         result["max_retries"] = max(0, min(raw["max_retries"], 3))
     if isinstance(raw.get("task"), str) and raw["task"] in {"general", "coding", "vision", "fast", "reasoning", "research"}:
         result["task"] = raw["task"]
+    # Global hard guard: monthly budget is USD 0.00; repo/team policies cannot loosen it.
+    result["free_only"] = True
+    result["allow_unknown_cost"] = False
+    result["allow_paid"] = False
     return result
 
 

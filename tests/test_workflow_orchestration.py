@@ -50,7 +50,10 @@ def test_repository_policy_overrides_team_and_defaults():
     resolved = resolve_workflow_policy("owner/private", "quant", policies)
     assert resolved["task"] == "coding"
     assert resolved["allow_unknown_cost"] is False
-    assert resolved["allow_paid"] is True
+    # The global USD 0.00 hard guard overrides repository-level paid opt-ins.
+    assert resolved["allow_paid"] is False
+    assert resolved["free_only"] is True
+    assert resolved["allow_unknown_cost"] is False
 
 
 def test_invalid_policy_json_fails_closed_to_defaults():

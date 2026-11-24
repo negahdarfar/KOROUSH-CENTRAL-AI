@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     allowed_repos: str = ""
     port: int = 8000
     admin_api_key: str = ""
+    usage_db_path: str = "/data/koroush_usage.sqlite3"
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
 
     @property

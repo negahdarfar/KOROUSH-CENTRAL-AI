@@ -1,5 +1,6 @@
 import secrets
 import asyncio
+import os
 import httpx
 from fastapi import FastAPI, HTTPException, Header, Query
 from pydantic import BaseModel, Field
@@ -13,8 +14,60 @@ from .model_router import select_avalai_model
 from .model_intelligence import classify_model
 from .avalai_gateway import CAPABILITY_CATALOG, JSON_SURFACES, execute_avalai_surface, AvalAIRequestError
 from .version import runtime_version
+from .usage_ledger import usage_summary
+from .quota_guard import list_usage_alerts
+from .tenant_routes import router as tenant_auth_router
+from .tenant_auth import TenantAuthError, authorize_tenant_inference
+from .alert_notifier import dispatch_usage_alerts, run_alert_worker
+from .operational_alerts import run_operational_alert_worker
+from .operational_health import router as operational_health_router
+from .job_routes import router as job_router
+from .evidence_routes import router as evidence_router
+from .extension_routes import router as extension_router
+from .event_routes import router as event_router
+from .agent_hub_routes import router as agent_hub_router
+from .job_admin_routes import router as job_admin_router
+from .worker_runtime import run_worker_loop, worker_enabled
+from .discovery_routes import router as discovery_router
 
-app = FastAPI(title="KOROUSH CENTRAL AI", version="0.3.0", description="Private, audit-first GitHub engineering agent")
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Own the notification worker lifecycle using FastAPI's supported lifespan API."""
+    alert_task = asyncio.create_task(run_alert_worker())
+    operational_alert_task = asyncio.create_task(run_operational_alert_worker())
+    job_task = asyncio.create_task(run_worker_loop()) if worker_enabled() else None
+    try:
+        yield
+    finally:
+        tasks = [alert_task, operational_alert_task] + ([job_task] if job_task is not None else [])
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+
+app = FastAPI(
+    title="KOROUSH CENTRAL AI",
+    version="0.4.0",
+    description="Private, audit-first GitHub engineering agent",
+    lifespan=lifespan,
+)
+app.include_router(tenant_auth_router)
+app.include_router(operational_health_router)
+app.include_router(job_router)
+app.include_router(evidence_router)
+app.include_router(extension_router)
+app.include_router(event_router)
+app.include_router(agent_hub_router)
+app.include_router(job_admin_router)
+app.include_router(discovery_router)
+
 
 
 class FixProposalRequest(BaseModel):
@@ -83,6 +136,7 @@ small{color:#b9c6d8}
  <pre id="modelAnalysis">برای بررسی قابلیت‌ها و قیمت، ابتدا فهرست مدل‌ها را بارگذاری کنید.</pre>
 <hr><h3>درگاه چندقابلیتی AvalAI</h3>
 <p>از فهرست زیر یک API را انتخاب و بدنه JSON متناسب با مستندات همان قابلیت را ارسال کنید. مدل انتخابی باید در فهرست مجاز حساب باشد.</p>
+<input id="quotaRepo" placeholder="شناسه مخزن برای سهمیه‌بندی، مثل owner/repository (اجباری)">
 <select id="surface">
 <option value="responses">Responses / استدلال و چندرسانه‌ای</option>
 <option value="chat_completions">Chat Completions / چت و بینایی</option>
@@ -278,11 +332,13 @@ document.getElementById('runCapability').addEventListener('click',async()=>{
  try{payload=JSON.parse(document.getElementById('apiPayload').value);}
  catch(e){out.textContent='JSON نامعتبر است: '+e.message;return;}
  const selected=document.getElementById('model').value;
+ const repository=document.getElementById('quotaRepo').value.trim();
+ if(!/^[^/\\s]+\\/[^/\\s]+$/.test(repository)){out.textContent='برای اعمال سهمیه، شناسه مخزن را به شکل owner/repository وارد کنید.';return;}
  if(selected)payload.model=selected;
  out.textContent='در حال ارسال درخواست به AvalAI...';
  try{
   const r=await fetch('/api/avalai/execute/'+encodeURIComponent(surface),{
-   method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({payload})
+   method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({payload,repository})
   });
   const data=await r.json();out.textContent=JSON.stringify(data,null,2);
  }catch(e){out.textContent='خطا در درخواست: '+e.message;}
@@ -350,7 +406,15 @@ async def diagnostics(
 
     llm = settings.active_llm
     required = ("base_url", "api_key") if llm["provider"] == "avalai" else ("base_url", "api_key", "model")
-    if not all(llm[key] for key in required):
+    if llm["provider"] != "avalai":
+        result["llm"] = {
+            "status": "blocked_zero_budget",
+            "provider": llm["provider"],
+            "inference_executed": False,
+            "budget_usd": 0,
+            "message": "Non-AvalAI inference is disabled because its zero-cost status cannot be verified from the authenticated catalog",
+        }
+    elif not all(llm[key] for key in required):
         result["llm"] = {
             "status": "not_configured",
             "provider": llm["provider"],
@@ -368,12 +432,29 @@ async def diagnostics(
                 catalog = await asyncio.wait_for(list_avalai_model_catalog(), timeout=15)
                 catalog_ms = round((clock.time() - catalog_started) * 1000)
                 available_models = {item["id"] for item in catalog}
-                if selected_model and selected_model not in available_models:
-                    raise ValueError("Requested model is not available to this AvalAI API key")
+                from .model_router import rank_avalai_models
+                eligible = rank_avalai_models(catalog, task="fast", free_only=True, allow_unknown_cost=False, allow_paid=False)
+                eligible_ids = {item["id"] for item in eligible}
+                if selected_model and selected_model not in eligible_ids:
+                    raise ValueError("Requested model is blocked by the zero-dollar policy")
                 if not selected_model:
-                    selected_model = select_avalai_model(catalog, task="fast")
-                if not selected_model:
-                    raise ValueError("No chat-capable model was selected from the AvalAI catalog")
+                    if not eligible:
+                        raise ValueError("No catalog-confirmed free chat model is available")
+                    selected_model = eligible[0]["id"]
+                # Diagnostics must never spend credits; verify catalog metadata only.
+                result["llm"] = {
+                    "status": "ok_free_catalog_only",
+                    "provider": "avalai",
+                    "model": selected_model,
+                    "model_selection": model_selection,
+                    "phase": "catalog_only",
+                    "inference_executed": False,
+                    "budget_usd": 0,
+                    "eligible_free_models": len(eligible),
+                    "timings_ms": {"catalog": catalog_ms, "chat_completion": None, "total": round((clock.time() - started) * 1000)},
+                }
+                result["elapsed_ms"] = round((clock.time() - started) * 1000)
+                return result
 
             phase = "chat_completion"
             url = llm["base_url"].rstrip("/") + "/chat/completions"
@@ -606,6 +687,37 @@ class AvalAIModelInspectRequest(BaseModel):
 
 class AvalAIExecuteRequest(BaseModel):
     payload: dict = Field(min_length=1)
+    repository: str | None = Field(default=None, min_length=3, max_length=255)
+
+
+@app.get("/api/usage")
+async def usage_report(
+    repository: str | None = Query(default=None, min_length=3, max_length=255),
+    x_admin_key: str | None = Header(default=None),
+):
+    """Return repository-scoped daily/monthly inference token totals."""
+    require_admin(x_admin_key)
+    return usage_summary(repository=repository)
+
+
+@app.get("/api/usage/alerts")
+async def usage_alert_report(
+    limit: int = Query(default=100, ge=1, le=500),
+    x_admin_key: str | None = Header(default=None),
+):
+    """Return deduplicated repository quota threshold alerts (70/85/100%)."""
+    require_admin(x_admin_key)
+    return {"alerts": list_usage_alerts(limit=limit)}
+
+
+@app.post("/api/usage/alerts/dispatch")
+async def dispatch_usage_alert_report(
+    limit: int = Query(default=100, ge=1, le=500),
+    x_admin_key: str | None = Header(default=None),
+):
+    """Admin-triggered delivery retry; the background worker also polls automatically."""
+    require_admin(x_admin_key)
+    return await dispatch_usage_alerts(limit=limit)
 
 
 @app.get("/api/avalai/capabilities")
@@ -660,13 +772,24 @@ async def avalai_execute(
     surface: str,
     request: AvalAIExecuteRequest,
     x_admin_key: str | None = Header(default=None),
+    x_tenant_key: str | None = Header(default=None),
 ):
-    """Execute an allow-listed AvalAI JSON capability; no arbitrary URL forwarding."""
-    require_admin(x_admin_key)
+    """Execute an allow-listed capability as admin or a repository-scoped tenant."""
+    repository = request.repository
+    if x_admin_key:
+        require_admin(x_admin_key)
+    else:
+        try:
+            identity = authorize_tenant_inference(x_tenant_key, repository)
+            repository = repository.strip().lower()
+        except TenantAuthError as exc:
+            raise HTTPException(status_code=403, detail=str(exc))
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
     if surface not in JSON_SURFACES:
         raise HTTPException(status_code=404, detail="Unknown or non-JSON AvalAI capability")
     try:
-        return await execute_avalai_surface(surface, request.payload)
+        return await execute_avalai_surface(surface, request.payload, repository=repository)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except RuntimeError as exc:
