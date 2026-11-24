@@ -85,7 +85,7 @@ def create_tenant_key(*, user_id: str, team_id: str, repositories: list[str],
     for repo in repos:
         if not repository_pattern.fullmatch(repo) or repo.endswith(".git"):
             raise TenantAuthError("Repositories must use valid exact GitHub owner/repository identities")
-    supported = {"inference:chat"}
+    supported = {"inference:chat", "jobs:enqueue"}
     if not allowed_scopes or not set(allowed_scopes).issubset(supported):
         raise TenantAuthError("Unsupported or empty tenant scope")
     pepper = _pepper()
@@ -196,3 +196,21 @@ def authorize_tenant_inference(raw_key: str | None, repository: str | None) -> d
     if not repo or repo not in identity["repositories"]:
         raise TenantAuthError("Repository is not assigned to this user/team API key")
     return identity
+
+
+def authorize_job_execution(key_id: str | None, repository: str | None, team_id: str | None) -> bool:
+    """Revalidate tenant key revocation and repository/team binding at execution time."""
+    if not key_id or not repository or not team_id:
+        return False
+    repo = repository.strip().lower()
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT team_id,repositories_json,scopes_json FROM tenant_api_keys "
+            "WHERE key_id=? AND revoked_at IS NULL", (key_id,)
+        ).fetchone()
+        if not row or row["team_id"] != team_id:
+            return False
+        return repo in json.loads(row["repositories_json"]) and "jobs:enqueue" in json.loads(row["scopes_json"])
+    finally:
+        conn.close()
