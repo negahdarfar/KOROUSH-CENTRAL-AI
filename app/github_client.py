@@ -3,30 +3,82 @@ from .config import settings
 
 API = "https://api.github.com"
 
+
 class GitHubClient:
     def _headers(self):
         if not settings.github_token:
             raise RuntimeError("GITHUB_TOKEN is not configured")
-        return {"Authorization": f"Bearer {settings.github_token}", "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+        return {
+            "Authorization": f"Bearer {settings.github_token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
 
     async def list_repositories(self):
+        """Return every repository visible to the authenticated GitHub account."""
+        repos = []
         async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.get(f"{API}/user/repos", headers=self._headers(), params={"per_page": 100, "sort": "updated"})
-            r.raise_for_status()
-            repos = r.json()
-        allowed = settings.repo_allowlist
-        if allowed:
-            repos = [x for x in repos if x.get("full_name") in allowed]
-        return [{"full_name": x.get("full_name"), "private": x.get("private"), "default_branch": x.get("default_branch"), "html_url": x.get("html_url")} for x in repos]
+            page = 1
+            while True:
+                response = await client.get(
+                    f"{API}/user/repos",
+                    headers=self._headers(),
+                    params={
+                        "per_page": 100,
+                        "page": page,
+                        "sort": "updated",
+                        "visibility": "all",
+                        "affiliation": "owner,collaborator,organization_member",
+                    },
+                )
+                response.raise_for_status()
+                batch = response.json()
+                repos.extend(batch)
+                if len(batch) < 100:
+                    break
+                page += 1
+
+        return [
+            {
+                "full_name": item.get("full_name"),
+                "private": item.get("private"),
+                "default_branch": item.get("default_branch"),
+                "html_url": item.get("html_url"),
+            }
+            for item in repos
+        ]
 
     async def get_repo_tree(self, full_name: str):
-        if settings.repo_allowlist and full_name not in settings.repo_allowlist:
-            raise PermissionError("Repository is not in ALLOWED_REPOS")
+        # Only inspect repositories actually visible to this GitHub token.
+        accessible = {item["full_name"] for item in await self.list_repositories()}
+        if full_name not in accessible:
+            raise PermissionError(
+                "Repository is not visible to GITHUB_TOKEN; check GitHub App installation and token permissions"
+            )
+
         async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.get(f"{API}/repos/{full_name}", headers=self._headers())
-            r.raise_for_status()
-            meta = r.json()
-            branch = meta["default_branch"]
-            t = await client.get(f"{API}/repos/{full_name}/git/trees/{branch}", headers=self._headers(), params={"recursive": "1"})
-            t.raise_for_status()
-            return {"default_branch": branch, "truncated": t.json().get("truncated", False), "tree": [{"path": x.get("path"), "type": x.get("type"), "size": x.get("size")} for x in t.json().get("tree", [])]}
+            response = await client.get(
+                f"{API}/repos/{full_name}", headers=self._headers()
+            )
+            response.raise_for_status()
+            metadata = response.json()
+            branch = metadata["default_branch"]
+            tree_response = await client.get(
+                f"{API}/repos/{full_name}/git/trees/{branch}",
+                headers=self._headers(),
+                params={"recursive": "1"},
+            )
+            tree_response.raise_for_status()
+            tree_data = tree_response.json()
+            return {
+                "default_branch": branch,
+                "truncated": tree_data.get("truncated", False),
+                "tree": [
+                    {
+                        "path": item.get("path"),
+                        "type": item.get("type"),
+                        "size": item.get("size"),
+                    }
+                    for item in tree_data.get("tree", [])
+                ],
+            }
