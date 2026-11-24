@@ -97,3 +97,8 @@ const job = await central.submitJob({
 ```
 
 The SDK does not create tenant keys. Provision each repository/team identity through the operator-controlled onboarding process and store the resulting key only in that repository's secret manager.
+
+
+## Public vs operator API discovery
+
+The public `/api/platform/manifest` deliberately omits operator-only endpoints. Authenticated tenant callers of `/api/apis` see only the tenant-safe API surface compatible with their scopes; callers with the configured `X-Admin-Key` can inspect the full operator catalog. This is discovery metadata, not a grant of access: every API still enforces its own authentication and authorization at request time.
