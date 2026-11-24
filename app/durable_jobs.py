@@ -51,7 +51,12 @@ def _connect() -> sqlite3.Connection:
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS ix_jobs_claim ON durable_jobs(status, available_at, lease_until)")
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(durable_jobs)").fetchall()}
+    for name, declaration in (("tenant_key_id", "TEXT"), ("team_id", "TEXT"), ("user_id", "TEXT")):
+        if name not in columns:
+            conn.execute(f"ALTER TABLE durable_jobs ADD COLUMN {name} {declaration}")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_jobs_repo_created ON durable_jobs(repository, created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_jobs_tenant_status ON durable_jobs(tenant_key_id, status, created_at)")
     return conn
 
 
@@ -97,6 +102,41 @@ def enqueue_job(repository: str, job_type: str, payload_ref: str, idempotency_ke
         conn.close()
 
 
+
+def enqueue_tenant_job(repository: str, job_type: str, payload_ref: str, idempotency_key: str,
+                       *, tenant_identity: dict, max_attempts: int = 5) -> dict:
+    """Enqueue only for an authenticated tenant identity bound to this repository."""
+    if not isinstance(tenant_identity, dict):
+        raise JobQueueError("authenticated tenant identity is required")
+    key_id = _validate_text(tenant_identity.get("key_id"), "tenant_key_id", 64, r"[A-Fa-f0-9-]{36}")
+    team_id = _validate_text(tenant_identity.get("team_id"), "team_id", 128, r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+    user_id = _validate_text(tenant_identity.get("user_id"), "user_id", 128, r"[A-Za-z0-9][A-Za-z0-9._:@+-]{0,127}")
+    repo = _validate_text(repository.lower(), "repository", 201, r"[a-z0-9][a-z0-9._-]{0,99}/[a-z0-9][a-z0-9._-]{0,99}")
+    if repo not in [str(item).lower() for item in tenant_identity.get("repositories", [])]:
+        raise JobQueueError("repository is not assigned to authenticated tenant")
+    if "jobs:enqueue" not in tenant_identity.get("scopes", []):
+        raise JobQueueError("tenant key does not have jobs:enqueue scope")
+    result = enqueue_job(repo, job_type, payload_ref, idempotency_key, max_attempts=max_attempts)
+    conn = _connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT tenant_key_id,team_id,user_id FROM durable_jobs WHERE id=?", (result["id"],)).fetchone()
+        if row["tenant_key_id"] and (row["tenant_key_id"] != key_id or row["team_id"] != team_id):
+            raise JobQueueError("idempotency key is already bound to another tenant identity")
+        conn.execute("""UPDATE durable_jobs SET tenant_key_id=?,team_id=?,user_id=?
+                        WHERE id=? AND (tenant_key_id IS NULL OR tenant_key_id=?)""",
+                     (key_id, team_id, user_id, result["id"], key_id))
+        conn.execute("COMMIT")
+        result.update({"team_id": team_id, "user_id": user_id})
+        return result
+    except Exception:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+    finally:
+        conn.close()
+
+
 def claim_job(worker_id: str, *, lease_seconds: int = 60) -> dict | None:
     worker = _validate_text(worker_id, "worker_id", 100, r"[A-Za-z0-9][A-Za-z0-9._:-]{0,99}")
     if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, int) or not 10 <= lease_seconds <= 3600:
@@ -121,7 +161,9 @@ def claim_job(worker_id: str, *, lease_seconds: int = 60) -> dict | None:
             (worker, lease_until, stamp, row["id"]))
         claimed = conn.execute("SELECT * FROM durable_jobs WHERE id=?", (row["id"],)).fetchone()
         conn.execute("COMMIT")
-        return dict(claimed)
+        result = dict(claimed)
+        result.pop("idempotency_key", None)
+        return result
     except Exception:
         if conn.in_transaction:
             conn.execute("ROLLBACK")
