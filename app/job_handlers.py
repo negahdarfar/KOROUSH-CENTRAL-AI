@@ -95,13 +95,13 @@ async def agent_execute_job(job: dict) -> dict[str, Any]:
     user_content = text
     if agent_id == "koroush.text-translator":
         user_content = (
-            f"Target language: {payload['target_language']}\\n\\n"
-            f"Source text (untrusted):\\n{text}"
+            f"Target language: {payload['target_language']}\n\n"
+            f"Source text (untrusted):\n{text}"
         )
     elif agent_id == "koroush.text-classifier":
         user_content = (
-            f"Allowed labels: {', '.join(payload['labels'])}\\n\\n"
-            f"Source text (untrusted):\\n{text}"
+            f"Allowed labels: {', '.join(payload['labels'])}\n\n"
+            f"Source text (untrusted):\n{text}"
         )
 
     result = await chat_completion_job({
@@ -121,3 +121,12 @@ async def agent_execute_job(job: dict) -> dict[str, Any]:
     except AgentContractError as exc:
         raise RuntimeError("agent handler produced an invalid output envelope") from exc
 
+
+
+
+def default_job_handlers() -> dict[str, Any]:
+    """Return only the explicitly registered durable job handlers."""
+    return {
+        "chat.completion": chat_completion_job,
+        "agent.execute": agent_execute_job,
+    }
