@@ -199,7 +199,7 @@ def list_usage_alerts(limit: int = 100) -> list[dict]:
     conn = _connect()
     try:
         rows = conn.execute(
-            "SELECT repository,period,metric,threshold,used,quota,created_at FROM usage_alerts ORDER BY id DESC LIMIT ?",
+            "SELECT id,repository,period,metric,threshold,used,quota,created_at FROM usage_alerts ORDER BY id DESC LIMIT ?",
             (max(1, min(int(limit), 500)),),
         ).fetchall()
         return [dict(row) for row in rows]
