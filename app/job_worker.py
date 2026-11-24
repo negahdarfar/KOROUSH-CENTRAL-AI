@@ -56,9 +56,13 @@ async def run_once(worker_id: str, handlers: dict[str, JobHandler],
         # Leave the lease to expire so another worker can safely reclaim it.
         raise
     except JobPayloadError:
-        logger.warning("Job payload could not be securely resolved; marking job terminal")
+        logger.warning("Job payload or result could not be securely resolved; marking job terminal")
         fail_job(job_id, worker_id, "payload_unavailable", retryable=False)
         return "payload_unavailable"
+    except ValueError:
+        logger.warning("Job input validation failed; marking job terminal")
+        fail_job(job_id, worker_id, "invalid_job_input", retryable=False)
+        return "invalid"
     except Exception:
         logger.exception("Durable job handler failed")
         fail_job(job_id, worker_id, "handler_failed", retryable=True)
