@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 import pytest
 
@@ -30,8 +32,7 @@ def _response(status, payload=None):
     )
 
 
-@pytest.mark.asyncio
-async def test_transient_failure_falls_back_only_to_catalog_confirmed_free_models(monkeypatch):
+def test_transient_failure_falls_back_only_to_catalog_confirmed_free_models(monkeypatch):
     FakeAsyncClient.calls = []
     FakeAsyncClient.responses = [
         _response(503),
@@ -53,10 +54,10 @@ async def test_transient_failure_falls_back_only_to_catalog_confirmed_free_model
     monkeypatch.setattr(agent, "_record_chat_usage",
                         lambda repo, model, data, response, surface: recorded.append(model))
 
-    data, response, model = await agent._chat_completion_with_free_failover(
+    data, response, model = asyncio.run(agent._chat_completion_with_free_failover(
         {"provider": "avalai", "api_key": "test", "base_url": "https://api.avalai.ir/v1", "model": ""},
         {"messages": []}, task="general", repository="org/repo",
-    )
+    ))
     assert [call["model"] for call in FakeAsyncClient.calls] == ["first-free", "second-free"]
     assert model == "second-free"
     assert data["choices"][0]["message"]["content"] == "ok"
@@ -67,8 +68,7 @@ async def _async_value(value):
     return value
 
 
-@pytest.mark.asyncio
-async def test_explicit_model_does_not_silently_switch_to_another_model(monkeypatch):
+def test_explicit_model_does_not_silently_switch_to_another_model(monkeypatch):
     FakeAsyncClient.calls = []
     FakeAsyncClient.responses = [_response(503)]
     monkeypatch.setattr(agent.httpx, "AsyncClient", FakeAsyncClient)
@@ -81,16 +81,15 @@ async def test_explicit_model_does_not_silently_switch_to_another_model(monkeypa
         "allow_paid": False, "max_retries": 3,
     })
     with pytest.raises(RuntimeError, match="No paid or unknown-price fallback"):
-        await agent._chat_completion_with_free_failover(
+        asyncio.run(agent._chat_completion_with_free_failover(
             {"provider": "avalai", "api_key": "test", "base_url": "https://api.avalai.ir/v1", "model": ""},
             {"messages": []}, task="general", repository="org/repo",
             requested_model="chosen-free",
-        )
+        ))
     assert [call["model"] for call in FakeAsyncClient.calls] == ["chosen-free"]
 
 
-@pytest.mark.asyncio
-async def test_non_retryable_auth_error_does_not_trigger_failover(monkeypatch):
+def test_non_retryable_auth_error_does_not_trigger_failover(monkeypatch):
     FakeAsyncClient.calls = []
     FakeAsyncClient.responses = [_response(401)]
     monkeypatch.setattr(agent.httpx, "AsyncClient", FakeAsyncClient)
@@ -103,8 +102,8 @@ async def test_non_retryable_auth_error_does_not_trigger_failover(monkeypatch):
         "allow_paid": False, "max_retries": 1,
     })
     with pytest.raises(httpx.HTTPStatusError):
-        await agent._chat_completion_with_free_failover(
+        asyncio.run(agent._chat_completion_with_free_failover(
             {"provider": "avalai", "api_key": "test", "base_url": "https://api.avalai.ir/v1", "model": ""},
             {"messages": []}, task="general", repository="org/repo",
-        )
+        ))
     assert [call["model"] for call in FakeAsyncClient.calls] == ["first-free"]
