@@ -75,17 +75,24 @@ export class CentralAIClient {
   apis() { return this.request("GET", "/api/apis", { query: { repository: this.repository } }); }
 
   agent(agentId) {
+    if (typeof agentId !== "string" || !agentId || agentId.length > 128) {
+      throw new TypeError("agentId must be non-empty text up to 128 characters");
+    }
     return this.request("GET", "/api/agents/" + encodeURIComponent(agentId), {
       query: { repository: this.repository },
     });
   }
 
   submitJob({ jobType, payload, idempotencyKey, maxAttempts = 5 }) {
-    if (!jobType || !payload || typeof payload !== "object" || Array.isArray(payload)) {
+    if (typeof jobType !== "string" || jobType.length < 2 || jobType.length > 80
+        || !payload || typeof payload !== "object" || Array.isArray(payload)) {
       throw new TypeError("jobType and object payload are required");
     }
-    if (!idempotencyKey || String(idempotencyKey).length > 128) {
+    if (typeof idempotencyKey !== "string" || !idempotencyKey || idempotencyKey.length > 128) {
       throw new TypeError("A stable idempotencyKey of at most 128 characters is required");
+    }
+    if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 20) {
+      throw new TypeError("maxAttempts must be an integer from 1 to 20");
     }
     return this.request("POST", "/api/jobs", {
       body: {
@@ -99,6 +106,9 @@ export class CentralAIClient {
   }
 
   jobStatus(jobId) {
+    if (typeof jobId !== "string" || !jobId || jobId.length > 128) {
+      throw new TypeError("jobId must be non-empty text up to 128 characters");
+    }
     return this.request("GET", "/api/jobs/" + encodeURIComponent(jobId), {
       query: { repository: this.repository },
     });
