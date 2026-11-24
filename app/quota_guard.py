@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -73,7 +74,7 @@ def _limits(repository: str) -> dict[str, int]:
             parsed = json.loads(raw)
             if not isinstance(parsed, dict):
                 raise ValueError("quota config must be an object")
-            config = parsed
+            config = {str(key).strip().lower(): value for key, value in parsed.items() if str(key).strip()}
         except (TypeError, json.JSONDecodeError) as exc:
             raise QuotaExceeded("Repository quota configuration is invalid; inference is fail-closed") from exc
     selected = config.get(repository, config.get("*", {}))
@@ -109,8 +110,8 @@ def reserve_inference(repository: str | None, payload: Any) -> str:
     repo = (repository or "").strip().lower()
     if not repo or repo == "__unassigned__":
         raise QuotaExceeded("Inference blocked: an explicit repository identity is required for quota enforcement")
-    if "/" not in repo or len(repo) > 255:
-        raise QuotaExceeded("Inference blocked: repository must use owner/name format")
+    if len(repo) > 255 or not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,99}/[a-z0-9][a-z0-9._-]{0,99}", repo):
+        raise QuotaExceeded("Inference blocked: repository must use a valid owner/name identity")
     limits = _limits(repo)
     estimate = _estimate_tokens(payload)
     now = datetime.now(timezone.utc)
