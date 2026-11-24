@@ -133,3 +133,14 @@ def test_registry_advertises_only_fixed_executable_text_agents():
     assert "agent.execute" in {
         item["id"] for item in platform_manifest()["capabilities"]
     }
+
+
+
+def test_tenant_api_catalog_requires_both_job_and_inference_scopes(monkeypatch):
+    monkeypatch.setattr(routes, "authenticate_tenant_key", lambda key: {
+        "team_id": "engineering", "repositories": ["org/repo"], "scopes": ["jobs:enqueue"]
+    })
+    result = asyncio.run(routes.api_catalog(
+        repository="org/repo", x_tenant_key="kor_test", x_admin_key=None
+    ))
+    assert "jobs.enqueue" not in {item["id"] for item in result["apis"]}
