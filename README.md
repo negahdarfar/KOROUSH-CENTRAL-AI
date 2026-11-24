@@ -155,3 +155,8 @@ This is API-key authentication and repository-level tenant isolation, not a full
 The draft includes a background worker that polls deduplicated quota threshold alerts. Telegram delivery requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Email delivery requires `SMTP_HOST`, `SMTP_FROM`, and `SMTP_TO`; optional settings are `SMTP_PORT` (default 587), `SMTP_USERNAME`, `SMTP_PASSWORD`, and `SMTP_USE_TLS` (default true). `ALERT_POLL_SECONDS` controls polling and is bounded to 15–3600 seconds.
 
 Delivery attempts are tracked in SQLite by alert ID and channel to prevent duplicate sends; failed attempts can be retried on a later worker cycle. The admin-only `POST /api/usage/alerts/dispatch` endpoint also triggers a delivery pass. No credentials are required if notifications are not enabled; in that case the worker remains idle. Secrets are read from environment variables and are not exposed by status responses. Delivery depends on Telegram/SMTP availability and provider policies; it is not a guaranteed emergency paging service.
+
+
+## Central AI Agent Hub
+
+This service is the shared control plane for connected repositories. See [docs/CENTRAL_AGENT_HUB.md](docs/CENTRAL_AGENT_HUB.md) for the agent catalog, tenant integration contract, Python SDK, onboarding requirements, migration strategy, and current limitations. Discovery endpoints are `GET /api/platform/manifest` and tenant-scoped `GET /api/agents?repository=owner/repository`.
