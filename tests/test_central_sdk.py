@@ -71,3 +71,50 @@ def test_sdk_job_submission_binds_repository_and_idempotency_key():
             await client.close()
 
     asyncio.run(run())
+
+
+
+def test_sdk_rejects_lookalike_localhost_hosts_and_invalid_keys():
+    for url in ("http://localhost.attacker.test", "http://127.0.0.1.attacker.test"):
+        try:
+            CentralAIClient(url, "kor_secret", "org/repo")
+        except ValueError as exc:
+            assert "HTTPS" in str(exc)
+        else:
+            raise AssertionError("lookalike localhost host must be rejected")
+
+    try:
+        CentralAIClient("https://central.example", "not-a-tenant-key", "org/repo")
+    except ValueError as exc:
+        assert "tenant key" in str(exc)
+    else:
+        raise AssertionError("invalid tenant key prefix must be rejected")
+
+
+def test_sdk_rejects_malformed_repository_and_job_arguments():
+    try:
+        CentralAIClient("https://central.example", "kor_secret", "org/repo.git")
+    except ValueError as exc:
+        assert "owner/repository" in str(exc)
+    else:
+        raise AssertionError("git suffix must be rejected")
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json={})
+        )) as http:
+            client = CentralAIClient("https://central.example", "kor_key", "org/repo", client=http)
+            for kwargs in (
+                {"job_type": "chat.completion", "payload": [], "idempotency_key": "id"},
+                {"job_type": "chat.completion", "payload": {}, "idempotency_key": ""},
+                {"job_type": "chat.completion", "payload": {}, "idempotency_key": "id", "max_attempts": True},
+            ):
+                try:
+                    await client.submit_job(**kwargs)
+                except ValueError:
+                    pass
+                else:
+                    raise AssertionError("invalid job arguments must be rejected")
+            await client.close()
+
+    asyncio.run(run())
