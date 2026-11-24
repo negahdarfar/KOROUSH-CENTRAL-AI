@@ -1,6 +1,6 @@
 # KOROUSH-CENTRAL-AI
 
-Private, audit-first GitHub engineering agent. The current repair workflow generates bounded proposals only; it does not write to target repositories or merge changes.
+Private, audit-first GitHub engineering agent. Audits are read-only. Repair proposals are non-writing; a separate repair-apply endpoint can publish explicitly confirmed changes to a new branch and open a Draft Pull Request. The service never merges a Pull Request automatically.
 
 ## LLM provider configuration
 
@@ -40,6 +40,6 @@ Audio transcription/translation and image editing require multipart file uploads
 
 ### Cost and safety
 
-AvalAI API calls may consume account credit or incur charges according to the account's model pricing. The router does not send requests to every model simultaneously (which would multiply cost). It exposes every model returned by the account catalog, supports explicit model selection, and automatically chooses one available chat model when no default is configured. Repository repair remains proposal-only; this feature does not write to audited repositories.
+AvalAI API calls may consume account credit or incur charges according to the account's model pricing. The router does not send requests to every model simultaneously (which would multiply cost). It exposes every model returned by the account catalog, supports explicit model selection, and automatically chooses one available chat model when no default is configured. Repository audits and proposals are read-only. The separate repair-apply workflow requires an authenticated admin request with `confirm=true`, creates a new branch, updates only inspected existing files, and opens a Draft Pull Request. It does not merge changes. Files containing detected secret redactions or truncated source content are excluded from repair candidates, preventing placeholder text or partial file snapshots from overwriting the original files.
 
 Official references: https://docs.avalai.org/en/api-reference/introduction, /images, /audio, /embeddings, /decisions, /responses.
