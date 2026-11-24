@@ -171,6 +171,11 @@ document.getElementById('loadModels').addEventListener('click',async()=>{
   const r=await fetch('/api/avalai/models',{headers:headers(),signal:controller.signal,cache:'no-store'});
   const data=await r.json();
   if(!r.ok)throw new Error(data.detail||'خطا در دریافت مدل‌ها (HTTP '+r.status+')');
+  modelCatalog=Array.isArray(data.models)?data.models.filter(item=>item&&typeof item.id==='string'&&item.id.trim()):[];
+  modelAnalysisOffset=0;
+  const inspectButton=document.getElementById('inspectModels');
+  inspectButton.disabled=modelCatalog.length===0;
+  inspectButton.textContent='تحلیل دسته بعدی ('+Math.min(25,modelCatalog.length)+' مدل)';
   const select=document.getElementById('model');
   select.innerHTML='<option value="">مدل پیش‌فرض Railway</option>';
   for(const item of data.models){
