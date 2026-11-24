@@ -60,7 +60,9 @@ def test_expired_lease_can_be_reclaimed(tmp_path, monkeypatch):
     job = enqueue_job("org/repo", "audit.run", "vault:payload-4", "req-6", max_attempts=2)
     first = claim_job("worker-a", lease_seconds=10)
     from app import durable_jobs
-    monkeypatch.setattr(durable_jobs, "_now", lambda: durable_jobs._now() + __import__("datetime").timedelta(seconds=11))
+    from datetime import timedelta
+    real_now = durable_jobs._now
+    monkeypatch.setattr(durable_jobs, "_now", lambda: real_now() + timedelta(seconds=11))
     second = claim_job("worker-b", lease_seconds=10)
     assert second["id"] == first["id"]
     assert second["attempts"] == 2
