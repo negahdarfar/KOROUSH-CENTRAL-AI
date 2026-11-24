@@ -9,9 +9,9 @@ The existing `LLM_*` configuration remains the default and is preserved. To sele
 - `LLM_PROVIDER=avalai`
 - `AVALAI_BASE_URL=https://api.avalai.ir/v1`
 - `AVALAI_API_KEY=<your AvalAI API key>`
-- `AVALAI_MODEL=<exact model ID from your AvalAI account/catalog>`
+- `AVALAI_MODEL` (optional): leave empty for automatic selection from the authenticated account catalog, or set an exact available model ID.
 
-The service calls the OpenAI-compatible `/chat/completions` endpoint. Keep the API key in Railway Variables; never commit it to GitHub or paste it into chat.
+The service discovers the authenticated `/v1/models` catalog. If `AVALAI_MODEL` is empty, it automatically selects a suitable chat/reasoning model that is actually present in that account catalog. You can still select any returned model explicitly in the admin panel. Keep the API key in Railway Variables; never commit it to GitHub or paste it into chat.
 
 To return to the existing provider, set `LLM_PROVIDER=legacy`; the existing `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL` values remain available.
 
@@ -40,6 +40,6 @@ Audio transcription/translation and image editing require multipart file uploads
 
 ### Cost and safety
 
-AvalAI API calls may consume account credit or incur charges according to the account's model pricing. This gateway does not automatically call every model: the administrator explicitly chooses a surface and model and submits a request. Repository repair remains proposal-only; this feature does not write to audited repositories.
+AvalAI API calls may consume account credit or incur charges according to the account's model pricing. The router does not send requests to every model simultaneously (which would multiply cost). It exposes every model returned by the account catalog, supports explicit model selection, and automatically chooses one available chat model when no default is configured. Repository repair remains proposal-only; this feature does not write to audited repositories.
 
 Official references: https://docs.avalai.org/en/api-reference/introduction, /images, /audio, /embeddings, /decisions, /responses.

@@ -7,6 +7,7 @@ from .config import settings
 from .github_client import GitHubClient
 from .agent import summarize_audit, generate_fix_proposal
 from .avalai import list_avalai_models
+from .model_router import select_avalai_model
 from .avalai_gateway import CAPABILITY_CATALOG, JSON_SURFACES, execute_avalai_surface, AvalAIRequestError
 
 app = FastAPI(title="KOROUSH CENTRAL AI", version="0.3.0", description="Private, audit-first GitHub engineering agent")
@@ -167,17 +168,21 @@ async def diagnostics(x_admin_key: str | None = Header(default=None)):
         result["github"] = {"status": "error", "message": "GitHub API check failed; verify GITHUB_TOKEN and its permissions"}
 
     llm = settings.active_llm
-    if not all(llm[key] for key in ("base_url", "api_key", "model")):
+    required = ("base_url", "api_key") if llm["provider"] == "avalai" else ("base_url", "api_key", "model")
+    if not all(llm[key] for key in required):
         result["llm"] = {
             "status": "not_configured",
             "provider": llm["provider"],
-            "message": "Configure the selected provider's API key and model in Railway variables",
+            "message": "Configure the provider base URL and API key; AVALAI_MODEL is optional when using AvalAI",
         }
     else:
         try:
+            selected_model = llm["model"]
+            if llm["provider"] == "avalai" and not selected_model:
+                selected_model = select_avalai_model(await list_avalai_models(), task="general")
             url = llm["base_url"] + "/chat/completions"
             payload = {
-                "model": llm["model"],
+                "model": selected_model,
                 "messages": [{"role": "user", "content": "Reply with OK"}],
                 "max_tokens": 5,
                 "temperature": 0,
@@ -190,7 +195,7 @@ async def diagnostics(x_admin_key: str | None = Header(default=None)):
                 )
                 response.raise_for_status()
                 response.json()
-            result["llm"] = {"status": "ok", "provider": llm["provider"], "model": llm["model"]}
+            result["llm"] = {"status": "ok", "provider": llm["provider"], "model": selected_model, "model_selection": "catalog_auto" if llm["provider"] == "avalai" and not llm["model"] else "configured"}
         except Exception:
             result["llm"] = {"status": "error", "provider": llm["provider"], "message": "LLM request failed; verify provider, key, model and available quota"}
 
@@ -227,7 +232,7 @@ async def audit(owner: str, repo: str, x_admin_key: str | None = Header(default=
     try:
         inventory = await gh.get_repo_snapshot(full_name)
         report = await summarize_audit({"repository": full_name, "inventory": inventory}, model=model)
-        return {"repository": full_name, "mode": "read-only", "model": model or settings.active_llm["model"], "inventory": {"default_branch": inventory["default_branch"], "truncated": inventory["truncated"], "file_count": inventory["file_count"], "files": [{"path": item["path"], "characters_analyzed": len(item["content"])} for item in inventory["files"]]}, "report_fa": report}
+        return {"repository": full_name, "mode": "read-only", "model": model or settings.active_llm["model"] or "catalog_auto", "inventory": {"default_branch": inventory["default_branch"], "truncated": inventory["truncated"], "file_count": inventory["file_count"], "files": [{"path": item["path"], "characters_analyzed": len(item["content"])} for item in inventory["files"]]}, "report_fa": report}
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
@@ -253,7 +258,7 @@ async def fix_proposal(
             "repository": full_name,
             "mode": "proposal-only",
             "applied": False,
-            "model": request.model or settings.active_llm["model"],
+            "model": request.model or settings.active_llm["model"] or "catalog_auto",
             "snapshot": {
                 "default_branch": snapshot["default_branch"],
                 "file_count": snapshot["file_count"],

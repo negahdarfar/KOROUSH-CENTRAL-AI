@@ -9,6 +9,7 @@ import httpx
 
 from .config import settings
 from .avalai import list_avalai_models
+from .model_router import select_avalai_model
 
 
 # Only fixed relative paths are allowed. Callers cannot choose arbitrary URLs.
@@ -53,12 +54,22 @@ async def execute_avalai_surface(surface: str, payload: dict) -> dict:
 
     body = dict(payload)
     model = body.get("model")
+    catalog = await list_avalai_models()
+    available = {item["id"] for item in catalog}
     if model is not None:
         if not isinstance(model, str) or not model.strip():
             raise ValueError("Model must be a non-empty model ID")
-        catalog = await list_avalai_models()
-        if model not in {item["id"] for item in catalog}:
+        if model not in available:
             raise ValueError("Requested model is not available to this AvalAI API key")
+    else:
+        configured = llm.get("model")
+        if configured:
+            if configured not in available:
+                raise ValueError("AVALAI_MODEL is not available to this AvalAI API key")
+            model = configured
+        else:
+            model = select_avalai_model(catalog, task="general")
+        body["model"] = model
 
     route = JSON_SURFACES[surface]["path"]
     url = llm["base_url"].rstrip("/") + route
