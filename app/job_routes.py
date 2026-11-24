@@ -44,8 +44,10 @@ async def submit_job(request: JobSubmitRequest, x_tenant_key: str | None = Heade
         raise HTTPException(status_code=403, detail="Repository is not assigned to this tenant")
     if "jobs:enqueue" not in identity.get("scopes", []):
         raise HTTPException(status_code=403, detail="Tenant key lacks jobs:enqueue scope")
-    if request.job_type != "chat.completion":
-        raise HTTPException(status_code=422, detail="Only chat.completion jobs are currently supported")
+    if request.job_type not in {"chat.completion", "agent.execute"}:
+        raise HTTPException(status_code=422, detail="Supported job types are chat.completion and agent.execute")
+    if "inference:chat" not in identity.get("scopes", []):
+        raise HTTPException(status_code=403, detail="Tenant key lacks inference:chat scope")
     if not worker_ready():
         raise HTTPException(status_code=503, detail="Durable job execution is disabled; enable JOB_WORKER_ENABLED after configuring the required secrets")
 
