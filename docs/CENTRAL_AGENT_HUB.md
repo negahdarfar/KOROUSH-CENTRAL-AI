@@ -135,3 +135,6 @@ Submit it to `POST /api/jobs` with `X-Tenant-Key`. The result is available throu
 
 
 SDK convenience methods are available for fixed agent execution. In Python, call `await central.submit_agent(agent_id="koroush.text-summarizer", payload={"text": "..."}, idempotency_key="summary-001")`. In Node.js, call `await central.submitAgent({agentId: "koroush.text-summarizer", payload: {text: "..."}, idempotencyKey: "summary-001"})`. The SDK pins the chosen agent ID in the request body; callers cannot override it through payload fields.
+
+
+The three text agents are intentionally labeled `limited`, not production-ready: their handler code and tests are present, but execution still depends on the opt-in durable worker, encrypted payload key, tenant-auth configuration, and a currently eligible provider/model. Do not mark them fully available until the central runtime passes readiness and an end-to-end tenant job is verified in the deployed environment.
