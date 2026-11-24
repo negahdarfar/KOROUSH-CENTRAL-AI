@@ -124,7 +124,7 @@ def reserve_inference(repository: str | None, payload: Any) -> str:
         conn.execute("DELETE FROM quota_reservations WHERE status='pending' AND expires_at < ?", (timestamp,))
         rows = conn.execute(
             """SELECT created_at, estimated_tokens, actual_tokens, status FROM quota_reservations
-               WHERE repository=? AND created_at>=?""", (repo, month_start)
+               WHERE repository=? AND created_at>=? AND status IN ('pending','complete')""", (repo, month_start)
         ).fetchall()
         day_rows = [r for r in rows if r["created_at"] >= day_start]
         month_requests = len(rows)
