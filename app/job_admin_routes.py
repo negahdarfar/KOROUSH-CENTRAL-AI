@@ -85,19 +85,22 @@ async def admin_job_recovery_audit(
     repository: str | None = None,
     limit: int = 50,
     before_event_at: str | None = None,
+    before_event_id: str | None = None,
     x_admin_key: str | None = Header(default=None),
 ):
     """Return a bounded, metadata-only audit trail for operator recovery actions."""
     _require_admin(x_admin_key)
     try:
         events = list_job_admin_events(
-            repository=repository, limit=limit, before_event_at=before_event_at
+            repository=repository, limit=limit, before_event_at=before_event_at,
+            before_event_id=before_event_id,
         )
         return {
             "events": events,
             "count": len(events),
             "limit": limit,
             "next_before_event_at": events[-1]["event_at"] if len(events) == limit else None,
+            "next_before_event_id": events[-1]["event_id"] if len(events) == limit else None,
             "notes": [
                 "This audit trail records operator recovery actions only.",
                 "It contains no prompts, encrypted payloads, provider credentials, or tenant API keys.",
