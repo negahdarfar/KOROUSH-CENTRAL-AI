@@ -1,9 +1,9 @@
 name: CI
 on:
   push:
-    branches: [ main, 'feature/**', 'hardening/**' ]
+    branches: [ main, 'feature/**', 'hardening/**', 'reliability/**' ]
   pull_request:
-    branches: [ main, 'feature/**' ]
+    branches: [ main, 'feature/**', 'hardening/**', 'reliability/**' ]
 jobs:
   validate:
     runs-on: ubuntu-latest
