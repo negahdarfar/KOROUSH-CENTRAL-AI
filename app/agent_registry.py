@@ -244,6 +244,8 @@ def platform_manifest() -> dict:
             "job_status": "GET /api/jobs/{job_id}?repository=owner/repository",
             "catalog": "GET /api/agents",
             "api_catalog": "GET /api/apis",
+            "extension_registration": "POST /api/extensions (admin)",
+            "extension_discovery": "GET /api/extensions?repository=owner/repository (tenant:registry:read)",
             "sdks": ["sdk/python/koroush_central", "sdk/node/koroush-central.mjs"],
         },
     }
