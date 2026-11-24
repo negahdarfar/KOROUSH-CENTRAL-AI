@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from .evidence_quality import EvidenceMetadataError, assess_evidence_pack
+
 
 CONTRACT_VERSION = 1
 MAX_SOURCE_CHARS = 12_000
@@ -91,8 +93,12 @@ def validate_agent_input(payload: Any) -> tuple[str, dict[str, Any]]:
         total_chars = 0
         total_bytes = 0
         for item in evidence:
-            if not isinstance(item, dict) or set(item) != {"source_id", "text"}:
-                raise AgentContractError("each evidence item must contain only source_id and text")
+            if (
+                not isinstance(item, dict)
+                or not {"source_id", "text"}.issubset(item)
+                or set(item) - {"source_id", "text", "publisher", "source_url", "observed_at"}
+            ):
+                raise AgentContractError("evidence item contains missing or unsupported fields")
             source_id, source_text = item["source_id"], item["text"]
             if (
                 not isinstance(source_id, str) or not source_id.strip() or len(source_id.strip()) > 80
@@ -107,8 +113,20 @@ def validate_agent_input(payload: Any) -> tuple[str, dict[str, Any]]:
             raise AgentContractError("combined evidence exceeds 20000 characters")
         if total_bytes > MAX_RESEARCH_TOTAL_BYTES:
             raise AgentContractError("combined UTF-8 evidence exceeds the 48 KiB limit")
-        if len({item["source_id"].casefold() for item in clean_evidence}) != len(clean_evidence):
-            raise AgentContractError("evidence source_id values must be unique")
+        try:
+            provenance = assess_evidence_pack(evidence)
+        except EvidenceMetadataError as exc:
+            raise AgentContractError(str(exc)) from exc
+        for index, record in enumerate(provenance):
+            clean_evidence[index].update({
+                "publisher": record["publisher"],
+                "source_url": evidence[index].get("source_url"),
+                "observed_at": record["observed_at"],
+                "sha256": record["sha256"],
+                "freshness": record["freshness"],
+                "provenance_completeness": record["provenance_completeness"],
+                "credibility": record["credibility"],
+            })
         return agent_id, {
             "agent_id": agent_id,
             "schema_version": CONTRACT_VERSION,
