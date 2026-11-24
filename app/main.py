@@ -113,7 +113,9 @@ small{color:#b9c6d8}
 <small>شاخه اصلی هرگز مستقیماً تغییر نمی‌کند و Pull Request به‌صورت Draft ساخته می‌شود؛ ادغام خودکار انجام نمی‌شود.</small></main>
 <script>
 let adminKey='';
-let pendingFixPreview=null;\nlet modelCatalog=[];\nlet modelAnalysisOffset=0;
+let pendingFixPreview=null;
+let modelCatalog=[];
+let modelAnalysisOffset=0;
 async function loadDeploymentVersion(){
  const status=document.getElementById('versionStatus');
  const details=document.getElementById('versionDetails');
@@ -220,7 +222,8 @@ document.getElementById('inspectModels').addEventListener('click',async()=>{
   button.disabled=modelAnalysisOffset>=modelCatalog.length;
  }
 });
-\ndocument.getElementById('runCapability').addEventListener('click',async()=>{
+
+document.getElementById('runCapability').addEventListener('click',async()=>{
  const surface=document.getElementById('surface').value;
  const out=document.getElementById('capabilityResult');
  if(!adminKey){out.textContent='ابتدا اتصال مدیریتی را آزمایش کنید.';return;}
