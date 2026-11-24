@@ -92,3 +92,19 @@ Optional Railway variable `KOROUSH_WORKFLOW_POLICIES` accepts JSON. Resolution o
 Supported task classes: `general`, `coding`, `vision`, `fast`, `reasoning`, and `research`. Invalid JSON fails closed to safe defaults. Do not enable paid models until an intentional budget and provider-side spending controls are configured.
 
 **Scope note:** the team/repository policy registry and free-first ranking are implemented for the AvalAI selection path. Cross-provider automatic failover, durable background orchestration, per-team usage accounting, and enforceable budget ledgers are not yet implemented and must not be treated as active.
+
+
+### Per-repository preflight quotas and alerts
+
+Every agent and JSON-gateway inference now reserves capacity atomically in SQLite before contacting AvalAI. Requests without an explicit `owner/repository` identity are blocked. Cancelled/failed attempts release their reservation; successful calls replace the conservative token reservation with provider-reported token usage when available. Stale pending reservations expire after 15 minutes.
+
+Project safety defaults (not AvalAI's published free-tier limits) are:
+
+- 20 requests per repository per day
+- 400 requests per repository per month
+- 20,000 reserved/used tokens per repository per day
+- 200,000 reserved/used tokens per repository per month
+
+Override limits with the Railway variable `KOROUSH_REPO_QUOTAS`, a JSON object keyed by exact lowercase `owner/repo` or `*` fallback. Supported integer keys: `requests_per_day`, `requests_per_month`, `tokens_per_day`, `tokens_per_month`. Invalid configuration fails closed. A conservative prompt/output-token estimate is reserved before the provider call; actual provider usage replaces it after success. If the provider omits usage metadata, the estimate is not represented as actual usage in the usage ledger.
+
+Threshold alerts are deduplicated at 70%, 85%, and 100%. Admin-only `GET /api/usage/alerts` returns recorded alerts; `GET /api/usage` continues to expose actual usage aggregates. Alerts are currently API-visible only; no Telegram/email delivery is configured. Quotas are internal project safeguards, not a guarantee of provider-side free quota or a hard provider billing ceiling.
