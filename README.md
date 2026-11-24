@@ -83,4 +83,16 @@ Optional Railway variable `KOROUSH_WORKFLOW_POLICIES` accepts JSON. Resolution o
 
 Supported task classes: `general`, `coding`, `vision`, `fast`, `reasoning`, and `research`. Invalid JSON fails closed to safe defaults. Do not enable paid models until an intentional budget and provider-side spending controls are configured.
 
-**Scope note:** the team/repository policy registry and free-first ranking are implemented for the AvalAI selection path. Cross-provider automatic failover, durable background orchestration, per-team usage accounting, and enforceable budget ledgers are not yet implemented and must not be treated as active.
+## OpenAI-compatible provider adapters and guarded failover
+
+The agent's audit and repair-generation chat calls now use a shared adapter for the active provider plus explicitly configured fallback providers. Supported fallback environment-variable groups are:
+
+- OpenRouter: `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, optional `OPENROUTER_BASE_URL` (defaults to `https://openrouter.ai/api/v1`), and `OPENROUTER_COST_CLASS`.
+- FreeLLMAPI: `FREELLMAPI_API_KEY`, `FREELLMAPI_MODEL`, `FREELLMAPI_BASE_URL`, and `FREELLMAPI_COST_CLASS`.
+- Gemini OpenAI-compatible endpoint: `GEMINI_API_KEY`, `GEMINI_MODEL`, optional `GEMINI_BASE_URL` (defaults to `https://generativelanguage.googleapis.com/v1beta/openai`), and `GEMINI_COST_CLASS`.
+
+Add provider names to `provider_order` in `KOROUSH_WORKFLOW_POLICIES` to make them eligible for fallback. The `*_COST_CLASS` value must be declared as `free`, `unknown`, or `paid`; omitted values default to `unknown`. Paid providers are blocked unless that workflow explicitly sets `allow_paid: true`. Unknown-cost fallback providers are blocked unless both `allow_unknown_cost: true` and `KOROUSH_ALLOW_UNKNOWN_PROVIDER_FALLBACK=true` are set. For a strict free-only workflow, set `free_only: true` and declare only providers whose selected model is confirmed free.
+
+Failover occurs only for timeouts, network errors, HTTP 408/409/425/429, or 5xx responses. Authentication errors, invalid requests, and other 4xx responses are not retried against another provider. Credentials are read from Railway variables and are never returned in provider metadata. Provider model IDs and cost classes are operator-supplied for non-AvalAI adapters; the service does not independently verify their price or availability.
+
+**Remaining scope:** this adapter currently covers agent chat-completion calls, not every AvalAI-specific media/capability gateway route. Team identity propagation, durable background queues, per-team usage accounting, hard budget ledgers, and live provider/model benchmarking are still future phases.
