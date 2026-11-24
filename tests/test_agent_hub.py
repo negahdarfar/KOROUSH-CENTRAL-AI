@@ -14,6 +14,11 @@ def test_platform_manifest_is_non_secret_and_marks_incomplete_transports():
     assert manifest["contract"]["job_submission"] == "POST /api/jobs"
     assert any(api["id"] == "jobs.enqueue" for api in manifest["apis"])
     assert any(api["id"] == "github.repair.apply" for api in manifest["apis"])
+    providers = {item["id"]: item["status"] for item in manifest["providers"]}
+    assert providers["avalai"] == "limited"
+    assert providers["openrouter"] == "planned"
+    assert providers["freellmapi"] == "planned"
+    assert providers["gemini"] == "planned"
     assert "api_key" not in str(manifest).lower()
     capabilities = {item["id"]: item["status"] for item in manifest["capabilities"]}
     assert capabilities["audio.transcription"] == "planned"
