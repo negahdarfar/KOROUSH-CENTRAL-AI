@@ -15,6 +15,10 @@ MAX_TARGET_LANGUAGE_CHARS = 80
 MAX_LABELS = 20
 MAX_LABEL_CHARS = 80
 MAX_OUTPUT_BYTES = 64 * 1024
+MAX_RESEARCH_ITEMS = 8
+MAX_RESEARCH_ITEM_CHARS = 5_000
+MAX_RESEARCH_TOTAL_CHARS = 20_000
+RESEARCH_DOMAINS = {"forex", "youtube", "ptc", "nft"}
 
 AGENT_CONTRACTS: dict[str, dict[str, Any]] = {
     "koroush.text-summarizer": {
@@ -37,6 +41,14 @@ AGENT_CONTRACTS: dict[str, dict[str, Any]] = {
         "output_fields": ["agent_id", "output"],
         "required_fields": ["text", "labels"],
         "max_source_chars": MAX_SOURCE_CHARS,
+    },
+    "koroush.research-brief": {
+        "version": CONTRACT_VERSION,
+        "input_fields": ["agent_id", "schema_version", "domain", "evidence"],
+        "output_fields": ["agent_id", "output"],
+        "required_fields": ["domain", "evidence"],
+        "max_evidence_items": MAX_RESEARCH_ITEMS,
+        "max_evidence_chars": MAX_RESEARCH_TOTAL_CHARS,
     },
 }
 
@@ -66,6 +78,38 @@ def validate_agent_input(payload: Any) -> tuple[str, dict[str, Any]]:
     missing = set(contract["required_fields"]) - set(payload)
     if missing:
         raise AgentContractError("agent payload is missing required fields")
+
+    if agent_id == "koroush.research-brief":
+        domain = payload.get("domain")
+        evidence = payload.get("evidence")
+        if not isinstance(domain, str) or domain not in RESEARCH_DOMAINS:
+            raise AgentContractError("domain must be one of forex, youtube, ptc, nft")
+        if not isinstance(evidence, list) or not 1 <= len(evidence) <= MAX_RESEARCH_ITEMS:
+            raise AgentContractError("evidence must contain 1–8 source items")
+        clean_evidence = []
+        total_chars = 0
+        for item in evidence:
+            if not isinstance(item, dict) or set(item) != {"source_id", "text"}:
+                raise AgentContractError("each evidence item must contain only source_id and text")
+            source_id, source_text = item["source_id"], item["text"]
+            if (
+                not isinstance(source_id, str) or not source_id.strip() or len(source_id.strip()) > 80
+                or not isinstance(source_text, str) or not source_text.strip()
+                or len(source_text) > MAX_RESEARCH_ITEM_CHARS
+            ):
+                raise AgentContractError("evidence source_id/text is invalid or exceeds its limit")
+            total_chars += len(source_text)
+            clean_evidence.append({"source_id": source_id.strip(), "text": source_text})
+        if total_chars > MAX_RESEARCH_TOTAL_CHARS:
+            raise AgentContractError("combined evidence exceeds 20000 characters")
+        if len({item["source_id"].casefold() for item in clean_evidence}) != len(clean_evidence):
+            raise AgentContractError("evidence source_id values must be unique")
+        return agent_id, {
+            "agent_id": agent_id,
+            "schema_version": CONTRACT_VERSION,
+            "domain": domain,
+            "evidence": clean_evidence,
+        }
 
     text = payload.get("text")
     if not isinstance(text, str) or not text.strip() or len(text) > MAX_SOURCE_CHARS:
