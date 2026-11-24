@@ -104,5 +104,6 @@ test("submitAgent pins the selected allowlisted agent and durable job type", asy
   assert.equal(result.status, "queued");
   assert.equal(requestBody.job_type, "agent.execute");
   assert.equal(requestBody.payload.agent_id, "koroush.text-summarizer");
+  assert.equal(requestBody.payload.schema_version, 1);
   assert.equal(client.headers, undefined);
 });
