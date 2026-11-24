@@ -64,7 +64,7 @@ def test_idempotent_retry_returns_original_job_and_does_not_leak_payload(monkeyp
 def test_changed_payload_with_same_idempotency_key_is_rejected(monkeypatch, tmp_path):
     key = _key(monkeypatch, tmp_path)
     from fastapi import HTTPException
-    submit_job(JobSubmitRequest(repository="org/repo", job_type="chat.completion", idempotency_key="same-key", payload={"task": "first"}), x_tenant_key=key)
+    asyncio.run(submit_job(JobSubmitRequest(repository="org/repo", job_type="chat.completion", idempotency_key="same-key", payload={"task": "first"}), x_tenant_key=key))
     try:
         asyncio.run(submit_job(JobSubmitRequest(repository="org/repo", job_type="chat.completion", idempotency_key="same-key", payload={"task": "changed"}), x_tenant_key=key))
         assert False, "expected idempotency conflict"
