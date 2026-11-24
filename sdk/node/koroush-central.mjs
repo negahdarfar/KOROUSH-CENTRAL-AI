@@ -124,7 +124,7 @@ export class CentralAIClient {
     }
     return this.submitJob({
       jobType: "agent.execute",
-      payload: { ...payload, agent_id: agentId },
+      payload: { ...payload, agent_id: agentId, schema_version: 1 },
       idempotencyKey,
       maxAttempts,
     });
