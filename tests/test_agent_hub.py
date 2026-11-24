@@ -171,3 +171,14 @@ def test_extension_discovery_api_requires_registry_read_scope(monkeypatch):
         repository="org/repo", x_tenant_key="kor_test", x_admin_key=None
     ))
     assert "extensions.discover" in {item["id"] for item in result["apis"]}
+
+
+def test_live_resource_discovery_is_admin_only_and_catalogued():
+    from app.agent_registry import list_agents, list_apis, platform_manifest
+
+    agents = {item["id"]: item for item in list_agents()}
+    assert agents["koroush.resource-discovery"]["api"] == "POST /api/admin/discovery/search"
+    apis = {item["id"]: item for item in list_apis()}
+    assert apis["discovery.github.search"]["auth"] == "admin"
+    public_apis = platform_manifest()["apis"]
+    assert "discovery.github.search" not in {item["id"] for item in public_apis}
