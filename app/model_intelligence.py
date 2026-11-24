@@ -46,6 +46,9 @@ def classify_model(model: dict) -> dict:
     elif mode in {"embedding", "embeddings"}:
         categories.append("embedding")
         evidence["embedding"] = "provider_metadata"
+    elif mode == "multimodal":
+        categories.append("multimodal")
+        evidence["multimodal"] = "provider_metadata"
     elif mode in {"audio", "speech"}:
         categories.append("audio")
         evidence["audio"] = "provider_metadata"
@@ -76,7 +79,7 @@ def classify_model(model: dict) -> dict:
         "id": model_id,
         "categories": categories,
         "evidence": evidence,
-        "classification_status": "metadata_verified" if model.get("details_available") else "partially_inferred",
+        "classification_status": "provider_metadata_available" if model.get("details_available") else "partially_inferred",
         "pricing_status": pricing_status,
         "min_tier": model.get("min_tier"),
         "context_length": model.get("context_length"),
