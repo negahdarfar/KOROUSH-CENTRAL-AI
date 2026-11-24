@@ -195,35 +195,77 @@ document.getElementById('loadModels').addEventListener('click',async()=>{
  }
 });
 
+document.getElementById('inspectModels').textContent='شروع تحلیل خودکار همه مدل‌ها';
 document.getElementById('inspectModels').addEventListener('click',async()=>{
  const out=document.getElementById('modelAnalysis');
  const button=document.getElementById('inspectModels');
  if(!adminKey){out.textContent='ابتدا اتصال مدیریتی را آزمایش کنید.';return;}
  if(!modelCatalog.length){out.textContent='ابتدا فهرست مدل‌ها را بارگذاری کنید.';return;}
  if(modelAnalysisOffset>=modelCatalog.length){out.textContent='بررسی تمام مدل‌های فهرست‌شده به پایان رسیده است.';return;}
- const batch=modelCatalog.slice(modelAnalysisOffset,modelAnalysisOffset+25);
  button.disabled=true;
- out.textContent='در حال بررسی '+(modelAnalysisOffset+1)+' تا '+(modelAnalysisOffset+batch.length)+' از '+modelCatalog.length+' مدل...';
- const controller=new AbortController();
- const timer=setTimeout(()=>controller.abort(),70000);
+ const allResults=[];
+ const failedBatches=[];
+ const batchSize=25;
+ const totalBatches=Math.ceil((modelCatalog.length-modelAnalysisOffset)/batchSize);
+ const startOffset=modelAnalysisOffset;
+ out.textContent='شروع بررسی خودکار '+(modelCatalog.length-startOffset)+' مدل در '+totalBatches+' دسته؛ این عملیات فقط فراداده را می‌خواند و هیچ درخواست تولید محتوا یا inference پولی نمی‌فرستد.';
  try{
-  const response=await fetch('/api/avalai/models/inspect',{
-   method:'POST',headers:{...headers(),'Content-Type':'application/json'},
-   body:JSON.stringify({model_ids:batch.map(item=>item.id)}),
-   signal:controller.signal,cache:'no-store'
-  });
-  const data=await response.json();
-  if(!response.ok)throw new Error(data.detail||'خطا در تحلیل مدل‌ها (HTTP '+response.status+')');
-  modelAnalysisOffset+=batch.length;
-  out.textContent=JSON.stringify({
-   progress:{inspected:modelAnalysisOffset,total:modelCatalog.length,remaining:modelCatalog.length-modelAnalysisOffset},
-   results:data.models,notes:data.notes
-  },null,2);
-  button.textContent=modelAnalysisOffset>=modelCatalog.length?'تحلیل همه مدل‌ها تکمیل شد':'تحلیل دسته بعدی ('+Math.min(25,modelCatalog.length-modelAnalysisOffset)+' مدل)';
+  while(modelAnalysisOffset<modelCatalog.length){
+   const batch=modelCatalog.slice(modelAnalysisOffset,modelAnalysisOffset+batchSize);
+   const first=modelAnalysisOffset+1;
+   const last=modelAnalysisOffset+batch.length;
+   out.textContent='در حال بررسی خودکار '+first+' تا '+last+' از '+modelCatalog.length+' مدل...\nدسته '+(Math.floor((first-startOffset-1)/batchSize)+1)+' از '+totalBatches;
+   let succeeded=false;
+   let lastError='';
+   for(let attempt=1;attempt<=2&&!succeeded;attempt++){
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),70000);
+    try{
+     const response=await fetch('/api/avalai/models/inspect',{
+      method:'POST',headers:{...headers(),'Content-Type':'application/json'},
+      body:JSON.stringify({model_ids:batch.map(item=>item.id)}),
+      signal:controller.signal,cache:'no-store'
+     });
+     const data=await response.json();
+     if(!response.ok)throw new Error(data.detail||'HTTP '+response.status);
+     allResults.push(...(Array.isArray(data.models)?data.models:[]));
+     modelAnalysisOffset+=batch.length;
+     succeeded=true;
+    }catch(error){
+     lastError=error.name==='AbortError'?'مهلت پاسخ تمام شد':error.message;
+     if(attempt<2)await new Promise(resolve=>setTimeout(resolve,1200));
+    }finally{clearTimeout(timer);}
+   }
+   if(!succeeded){
+    failedBatches.push({from:first,to:last,error:lastError});
+    modelAnalysisOffset+=batch.length;
+   }
+   await new Promise(resolve=>setTimeout(resolve,300));
+  }
+  const report={
+   provider:'avalai',
+   completed_at:new Date().toISOString(),
+   progress:{inspected:allResults.length,total:modelCatalog.length,failed_model_count:failedBatches.reduce((sum,b)=>sum+b.to-b.from+1,0)},
+   results:allResults,
+   failed_batches:failedBatches,
+   notes:[
+    'Only authenticated model metadata endpoints were queried; no chat completion or paid inference was run.',
+    'A missing price is unknown, never assumed free.',
+    'Provider metadata and model-name inferences remain separately labelled.'
+   ]
+  };
+  out.textContent=JSON.stringify(report,null,2);
+  const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'});
+  const link=document.createElement('a');
+  const url=URL.createObjectURL(blob);
+  link.href=url;
+  link.download='avalai-model-inspection-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';
+  document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+  button.textContent=failedBatches.length?'پایان بررسی؛ برخی دسته‌ها ناموفق بودند':'تحلیل خودکار همه مدل‌ها تکمیل شد';
  }catch(error){
-  out.textContent=error.name==='AbortError'?'زمان تحلیل این دسته تمام شد؛ می‌توانید دوباره تلاش کنید.':'تحلیل مدل‌ها ناموفق بود: '+error.message;
+  out.textContent='تحلیل خودکار متوقف شد: '+error.message+'\nمی‌توانید دوباره اجرا کنید؛ مدل‌های پردازش‌شده تا این مرحله در حافظه همین صفحه هستند.';
+  button.textContent='ادامه تحلیل خودکار';
  }finally{
-  clearTimeout(timer);
   button.disabled=modelAnalysisOffset>=modelCatalog.length;
  }
 });
