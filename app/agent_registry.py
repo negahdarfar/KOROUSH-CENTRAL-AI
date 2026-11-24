@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+from .integration_profiles import list_integration_profiles
+
 PLATFORM_VERSION = "0.4.0"
 MANIFEST_VERSION = "1.0"
 
@@ -207,6 +209,7 @@ def platform_manifest() -> dict:
         "platform_version": PLATFORM_VERSION,
         "integration_model": "central-control-plane",
         "agents": list_agents(),
+        "integrations": list_integration_profiles(),
         "apis": list_apis(include_admin=False),
         "providers": [deepcopy(item) for item in _PROVIDER_CATALOG],
         "capabilities": [deepcopy(item) for item in _CAPABILITIES],
