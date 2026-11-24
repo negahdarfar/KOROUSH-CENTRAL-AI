@@ -31,6 +31,7 @@ def test_redacted_snapshot_files_are_never_editable():
         {"path": "app/safe.py", "content": "print(1)", "contains_redactions": False},
         {"path": "config.py", "content": "key=[REDACTED]", "contains_redactions": True},
         {"path": "legacy.py", "content": "print(2)"},
+        {"path": "long.py", "content": "partial source", "content_truncated": True},
     ]}
     assert editable_snapshot_paths(snapshot) == {"app/safe.py", "legacy.py"}
 
@@ -44,3 +45,10 @@ def test_redacted_file_is_rejected_by_implementation_allowlist():
             {"files": [{"path": "config.py", "content": "key = \"[REDACTED]\""}]},
             allowed,
         )
+
+
+def test_truncated_snapshot_files_are_never_editable():
+    allowed = editable_snapshot_paths({"files": [
+        {"path": "large_module.py", "content": "partial", "content_truncated": True},
+    ]})
+    assert allowed == set()
