@@ -391,3 +391,42 @@ def requeue_dead_letter_job(job_id: str, repository: str, expected_updated_at: s
         raise
     finally:
         conn.close()
+
+
+
+def list_job_admin_events(*, repository: str | None = None, limit: int = 50,
+                          before_event_at: str | None = None) -> list[dict]:
+    """List bounded operator audit metadata; never read payloads or tenant credentials."""
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+        raise JobQueueError("limit must be from 1 to 100")
+    repo = None
+    if repository is not None and repository.strip():
+        repo = _validate_text(
+            repository.lower(), "repository", 201,
+            r"[a-z0-9][a-z0-9._-]{0,99}/[a-z0-9][a-z0-9._-]{0,99}",
+        )
+    before = None
+    if before_event_at is not None:
+        before = _validate_text(before_event_at, "before_event_at", 64,
+                                r"[0-9T:+.\-]{20,64}")
+    clauses = []
+    params: list[Any] = []
+    if repo:
+        clauses.append("repository=?")
+        params.append(repo)
+    if before:
+        clauses.append("event_at<?")
+        params.append(before)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    params.append(limit)
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """SELECT event_id,job_id,repository,action,event_at,manual_requeues
+               FROM job_admin_events""" + where +
+            " ORDER BY event_at DESC,event_id DESC LIMIT ?",
+            tuple(params),
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
