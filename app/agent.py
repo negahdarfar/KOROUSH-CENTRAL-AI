@@ -12,6 +12,7 @@ from .workflow_registry import resolve_workflow_policy
 from .usage_ledger import record_usage, normalize_usage
 from .quota_guard import reserve_inference, complete_reservation, cancel_reservation
 from .avalai_gateway import require_approved_repository
+from .provider_router import verified_free_chat_providers
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,17 @@ async def _chat_completion_with_free_failover(
             raise RuntimeError("No catalog-confirmed free chat model is available")
         max_retries = max(0, min(int(policy.get("max_retries", 1)), 3))
         candidates = [item["id"] for item in eligible[: max_retries + 1]]
+
+    # Re-check the selected adapter against trusted runtime pricing evidence.
+    # A provider's self-declared COST_CLASS=free is never sufficient.
+    evidence_model = selected or candidates[0]
+    verified = verified_free_chat_providers(
+        {**llm, "model": evidence_model},
+        provider_order=["avalai"],
+        verified_free_models={"avalai": set(eligible_by_id)},
+    )
+    if not verified:
+        raise RuntimeError("Inference blocked: no adapter/model has trusted zero-price evidence")
 
     url = llm["base_url"].rstrip("/") + "/chat/completions"
     headers = {"Authorization": f"Bearer {llm['api_key']}"}
