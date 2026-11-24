@@ -15,8 +15,10 @@ from .avalai_gateway import CAPABILITY_CATALOG, JSON_SURFACES, execute_avalai_su
 from .version import runtime_version
 from .usage_ledger import usage_summary
 from .quota_guard import list_usage_alerts
+from .tenant_routes import router as tenant_auth_router
 
 app = FastAPI(title="KOROUSH CENTRAL AI", version="0.3.0", description="Private, audit-first GitHub engineering agent")
+app.include_router(tenant_auth_router)
 
 
 class FixProposalRequest(BaseModel):
