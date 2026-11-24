@@ -1,5 +1,6 @@
+import asyncio
+
 import httpx
-import pytest
 
 from app.provider_router import (
     _eligible,
@@ -75,8 +76,8 @@ def test_failover_is_limited_to_transient_errors():
     assert not _is_transient_error(bad_request)
 
 
-@pytest.mark.asyncio
-async def test_chat_completion_falls_back_after_transient_error(monkeypatch):
+def test_chat_completion_falls_back_after_transient_error(monkeypatch):
+    async def run_test():
     monkeypatch.setenv("OPENROUTER_API_KEY", "router-secret")
     monkeypatch.setenv("OPENROUTER_MODEL", "confirmed-free-model")
     monkeypatch.setenv("OPENROUTER_COST_CLASS", "free")
@@ -111,17 +112,19 @@ async def test_chat_completion_falls_back_after_transient_error(monkeypatch):
         "provider": "avalai", "base_url": "https://avalai.test/v1",
         "api_key": "avalai-secret", "model": "catalog-model",
     }
-    result, metadata = await chat_completion(
-        active,
-        {"messages": [{"role": "user", "content": "test"}]},
-        policy={
-            "provider_order": ["avalai", "openrouter"],
-            "allow_unknown_cost": True,
-            "allow_paid": False,
-            "free_only": False,
-        },
-    )
-    assert result["choices"][0]["message"]["content"] == "ok"
-    assert metadata["provider"] == "openrouter"
-    assert metadata["fallback_used"] is True
-    assert len(attempts) == 2
+        result, metadata = await chat_completion(
+            active,
+            {"messages": [{"role": "user", "content": "test"}]},
+            policy={
+                "provider_order": ["avalai", "openrouter"],
+                "allow_unknown_cost": True,
+                "allow_paid": False,
+                "free_only": False,
+            },
+        )
+        assert result["choices"][0]["message"]["content"] == "ok"
+        assert metadata["provider"] == "openrouter"
+        assert metadata["fallback_used"] is True
+        assert len(attempts) == 2
+
+    asyncio.run(run_test())
