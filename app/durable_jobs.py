@@ -21,6 +21,10 @@ class JobQueueError(RuntimeError):
     pass
 
 
+class IdempotencyConflict(JobQueueError):
+    pass
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -52,7 +56,7 @@ def _connect() -> sqlite3.Connection:
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS ix_jobs_claim ON durable_jobs(status, available_at, lease_until)")
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(durable_jobs)").fetchall()}
-    for name, declaration in (("tenant_key_id", "TEXT"), ("team_id", "TEXT"), ("user_id", "TEXT"), ("result_ref", "TEXT")):
+    for name, declaration in (("tenant_key_id", "TEXT"), ("team_id", "TEXT"), ("user_id", "TEXT"), ("result_ref", "TEXT"), ("payload_hash", "TEXT")):
         if name not in columns:
             conn.execute(f"ALTER TABLE durable_jobs ADD COLUMN {name} {declaration}")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_jobs_repo_created ON durable_jobs(repository, created_at)")
@@ -104,7 +108,7 @@ def enqueue_job(repository: str, job_type: str, payload_ref: str, idempotency_ke
 
 
 def enqueue_tenant_job(repository: str, job_type: str, payload_ref: str, idempotency_key: str,
-                       *, tenant_identity: dict, max_attempts: int = 5) -> dict:
+                       *, tenant_identity: dict, max_attempts: int = 5, payload_hash: str | None = None) -> dict:
     """Atomically enqueue and bind a job to the authenticated key/team/user."""
     if not isinstance(tenant_identity, dict):
         raise JobQueueError("authenticated tenant identity is required")
@@ -117,6 +121,8 @@ def enqueue_tenant_job(repository: str, job_type: str, payload_ref: str, idempot
     idem = _validate_text(idempotency_key, "idempotency_key", 128, r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
     if isinstance(max_attempts, bool) or not isinstance(max_attempts, int) or not 1 <= max_attempts <= 20:
         raise JobQueueError("max_attempts must be an integer from 1 to 20")
+    if payload_hash is not None and not re.fullmatch(r"[a-f0-9]{64}", payload_hash):
+        raise JobQueueError("payload_hash must be a SHA-256 hex digest")
     if repo not in [str(item).lower() for item in tenant_identity.get("repositories", [])]:
         raise JobQueueError("repository is not assigned to authenticated tenant")
     if "jobs:enqueue" not in tenant_identity.get("scopes", []):
@@ -134,15 +140,17 @@ def enqueue_tenant_job(repository: str, job_type: str, payload_ref: str, idempot
             if existing["tenant_key_id"] != key_id or existing["team_id"] != team_id or existing["user_id"] != user_id:
                 raise JobQueueError("idempotency key is already bound to another tenant identity")
             if existing["job_type"] != kind:
-                raise JobQueueError("idempotency key was already used for a different job type")
+                raise IdempotencyConflict("idempotency key was already used for a different job type")
+            if payload_hash is not None and (not existing["payload_hash"] or existing["payload_hash"] != payload_hash):
+                raise IdempotencyConflict("idempotency key was already used with a different or unverifiable payload")
             row = existing
         else:
             job_id = str(uuid.uuid4())
             conn.execute("""INSERT INTO durable_jobs
                 (id,repository,job_type,payload_ref,idempotency_key,status,max_attempts,available_at,
-                 created_at,updated_at,tenant_key_id,team_id,user_id)
-                VALUES(?,?,?,?,?,'queued',?,?,?,?,?,?,?)""",
-                (job_id, repo, kind, ref, idem, max_attempts, now, now, now, key_id, team_id, user_id))
+                 created_at,updated_at,tenant_key_id,team_id,user_id,payload_hash)
+                VALUES(?,?,?,?,?,'queued',?,?,?,?,?,?,?,?)""",
+                (job_id, repo, kind, ref, idem, max_attempts, now, now, now, key_id, team_id, user_id, payload_hash))
             row = conn.execute("SELECT * FROM durable_jobs WHERE id=?", (job_id,)).fetchone()
         conn.execute("COMMIT")
         result = dict(row)
@@ -164,6 +172,8 @@ def tenant_job_status(job_id: str, *, repository: str, tenant_identity: dict) ->
         return None
     repo = str(repository or "").strip().lower()
     if repo not in [str(item).lower() for item in tenant_identity.get("repositories", [])]:
+        return None
+    if "jobs:read" not in tenant_identity.get("scopes", []):
         return None
     conn = _connect()
     try:
