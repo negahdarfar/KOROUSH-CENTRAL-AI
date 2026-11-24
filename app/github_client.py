@@ -49,6 +49,13 @@ class GitHubClient:
         ]
 
     async def get_repo_tree(self, full_name: str):
+        # Enforce the optional explicit allowlist before making any GitHub API calls.
+        allowlist = settings.repo_allowlist
+        if allowlist and full_name not in allowlist:
+            raise PermissionError(
+                "Repository is not in ALLOWED_REPOS; add its exact owner/name to the service configuration"
+            )
+
         # Only inspect repositories actually visible to this GitHub token.
         accessible = {item["full_name"] for item in await self.list_repositories()}
         if full_name not in accessible:
