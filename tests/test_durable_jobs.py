@@ -67,3 +67,16 @@ def test_expired_lease_can_be_reclaimed(tmp_path, monkeypatch):
     assert second["id"] == first["id"]
     assert second["attempts"] == 2
     assert finish_job(job["id"], "worker-a") is False
+
+
+
+def test_expired_lease_cannot_be_failed_by_old_worker(tmp_path, monkeypatch):
+    configure_db(tmp_path, monkeypatch)
+    job = enqueue_job("org/repo", "audit.run", "vault:payload-expired", "req-expired")
+    claim_job("worker-old", lease_seconds=10)
+    from app import durable_jobs
+    from datetime import timedelta
+    real_now = durable_jobs._now
+    monkeypatch.setattr(durable_jobs, "_now", lambda: real_now() + timedelta(seconds=11))
+    assert fail_job(job["id"], "worker-old", "late_failure", retryable=False) is False
+    assert job_status(job["id"], "org/repo")["status"] == "running"
