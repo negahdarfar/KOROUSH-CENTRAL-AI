@@ -5,6 +5,7 @@ a Python module, URL, tool, provider adapter, or arbitrary execution target.
 """
 from __future__ import annotations
 
+import json
 from typing import Any
 
 
@@ -13,6 +14,7 @@ MAX_SOURCE_CHARS = 12_000
 MAX_TARGET_LANGUAGE_CHARS = 80
 MAX_LABELS = 20
 MAX_LABEL_CHARS = 80
+MAX_OUTPUT_BYTES = 64 * 1024
 
 AGENT_CONTRACTS: dict[str, dict[str, Any]] = {
     "koroush.text-summarizer": {
@@ -81,13 +83,17 @@ def validate_agent_input(payload: Any) -> tuple[str, dict[str, Any]]:
         normalized["target_language"] = target.strip()
     elif agent_id == "koroush.text-classifier":
         labels = payload.get("labels")
-        if (
-            not isinstance(labels, list) or not 2 <= len(labels) <= MAX_LABELS
-            or any(not isinstance(label, str) or not label.strip() or len(label) > MAX_LABEL_CHARS for label in labels)
-            or len({label.casefold() for label in labels}) != len(labels)
+        if not isinstance(labels, list) or not 2 <= len(labels) <= MAX_LABELS:
+            raise AgentContractError("labels must contain 2–20 unique non-empty strings")
+        if any(
+            not isinstance(label, str) or not label.strip() or len(label.strip()) > MAX_LABEL_CHARS
+            for label in labels
         ):
             raise AgentContractError("labels must contain 2–20 unique non-empty strings")
-        normalized["labels"] = [label.strip() for label in labels]
+        clean_labels = [label.strip() for label in labels]
+        if len({label.casefold() for label in clean_labels}) != len(clean_labels):
+            raise AgentContractError("labels must contain 2–20 unique non-empty strings")
+        normalized["labels"] = clean_labels
     return agent_id, normalized
 
 
@@ -97,4 +103,10 @@ def validate_agent_output(agent_id: str, output: Any) -> dict[str, Any]:
         raise AgentContractError("agent output does not match a registered contract")
     if output.get("agent_id") != agent_id or not isinstance(output.get("output"), dict):
         raise AgentContractError("agent output envelope is invalid")
+    try:
+        encoded = json.dumps(output["output"], ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise AgentContractError("agent output must be JSON-serializable") from exc
+    if len(encoded) > MAX_OUTPUT_BYTES:
+        raise AgentContractError("agent output exceeds the 65536-byte limit")
     return {"agent_id": agent_id, "output": output["output"]}
