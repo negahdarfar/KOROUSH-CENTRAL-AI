@@ -36,7 +36,7 @@ jobs:
         run: node --test tests/sdk-node.test.mjs
       - name: Upload test diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: integrated-release-test-results
           path: test-results/
