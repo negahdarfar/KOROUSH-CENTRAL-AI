@@ -19,6 +19,9 @@ def test_query_is_bounded_and_rejects_unknown_kind():
     assert '"multi agent" archived:false' in github_query(DiscoveryQuery("repository", ("multi agent",)))
     with pytest.raises(ValueError): DiscoveryQuery("unknown", ("agent",))
     with pytest.raises(ValueError): DiscoveryQuery("repository", ("x",), limit=1000)
+    with pytest.raises(ValueError): DiscoveryQuery("repository", ('agent" archived:true',))
+    with pytest.raises(ValueError): DiscoveryQuery("repository", ("agent\\\\repo",))
+    with pytest.raises(ValueError): DiscoveryQuery("repository", ("agent\nrepo",))
 
 def test_official_evidence_needed_for_free_label():
     result = assess_candidate(candidate(evidence=()), now=NOW)
@@ -34,6 +37,9 @@ def test_archived_and_non_https_sources_rejected():
     assert assess_candidate(candidate(archived=True), now=NOW).status == "rejected"
     assert assess_candidate(candidate(url="http://github.com/x/y"), now=NOW).status == "rejected"
     assert assess_candidate(candidate(url="https://user:pass@github.com/x/y"), now=NOW).status == "rejected"
+    assert assess_candidate(candidate(url="https://127.0.0.1/private"), now=NOW).status == "rejected"
+    assert assess_candidate(candidate(url="https://-invalid.example/project"), now=NOW).status == "rejected"
+    assert assess_candidate(candidate(url="https://github.com/x/y#fragment"), now=NOW).status == "rejected"
 
 def test_stale_project_loses_freshness_credit():
     result = assess_candidate(candidate(pushed_at="2020-01-01T00:00:00Z"), now=NOW)
