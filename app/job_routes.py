@@ -8,7 +8,8 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from .durable_jobs import JobQueueError, enqueue_tenant_job, tenant_job_status
-from .job_payload_store import JobPayloadError, delete_payload, put_payload
+from .job_payload_store import JobPayloadError, delete_payload, get_payload, put_payload
+from .worker_runtime import worker_enabled
 from .tenant_auth import authenticate_tenant_key
 
 router = APIRouter()
@@ -41,8 +42,10 @@ async def submit_job(request: JobSubmitRequest, x_tenant_key: str | None = Heade
         raise HTTPException(status_code=403, detail="Repository is not assigned to this tenant")
     if "jobs:enqueue" not in identity.get("scopes", []):
         raise HTTPException(status_code=403, detail="Tenant key lacks jobs:enqueue scope")
-    if not re.fullmatch(r"[a-z][a-z0-9_.-]{1,79}", request.job_type):
-        raise HTTPException(status_code=422, detail="job_type has an invalid format")
+    if request.job_type != "chat.completion":
+        raise HTTPException(status_code=422, detail="Only chat.completion jobs are currently supported")
+    if not worker_enabled():
+        raise HTTPException(status_code=503, detail="Durable job execution is disabled; enable JOB_WORKER_ENABLED after configuring the required secrets")
 
     payload_ref = None
     try:
@@ -82,4 +85,13 @@ async def get_job_status(
     result = tenant_job_status(job_id, repository=repository, tenant_identity=identity)
     if result is None:
         raise HTTPException(status_code=404, detail="Job not found")
+    result_ref = result.pop("result_ref", None)
+    if result_ref:
+        try:
+            stored = get_payload(result_ref)
+            result["result"] = stored.get("result") if isinstance(stored, dict) else stored
+        except JobPayloadError:
+            result["result_expired"] = True
+    else:
+        result["result"] = None
     return result
