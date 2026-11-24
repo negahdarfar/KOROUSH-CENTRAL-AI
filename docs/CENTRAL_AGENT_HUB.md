@@ -65,3 +65,7 @@ Before an agent is marked `available`, it needs:
 ## Current limitations
 
 The first iteration provides discovery and a Python integration client. It does not yet implement dynamic agent installation, a full plugin sandbox, universal API adapters, cross-repository user SSO, or a graphical control-plane dashboard. Existing synchronous GitHub operator endpoints remain operator-only. These gaps must be closed in separate reviewed increments.
+
+## Provider consolidation status
+
+The manifest exposes the current provider integration state. AvalAI is the only provider adapter represented as partially available in this hub branch. OpenRouter, FreeLLMAPI, and Gemini remain planned integrations until their adapters are reviewed, tested against real account metadata, and wired through the common routing and usage policy. A provider name, model label, or `free` suffix is never sufficient evidence of zero price. The global zero-cost policy must reject unknown or paid pricing unless a separately approved budget policy is introduced.
