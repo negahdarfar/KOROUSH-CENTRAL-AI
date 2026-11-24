@@ -135,3 +135,8 @@ The internal quota is a conservative project safeguard. It is not a provider-sid
 The USD 0.00 gateway currently permits only `chat_completions`, because the authenticated model catalog's input/output token pricing does not prove that image, audio, video, OCR, reranking, embeddings, or other specialized API surfaces are free. Those routes remain documented but blocked until reliable surface-specific zero-price evidence and dedicated tests exist.
 
 Set Railway `ALLOWED_REPOS` to a comma-separated list of approved `owner/repository` identities before enabling any agent or gateway inference, for example `org/project-a,org/project-b`. If the allowlist is empty, all inference paths fail closed. This allowlist is an operator approval boundary, not end-user authentication; keep the admin API key private.
+
+
+## Safe provider-adapter integration
+
+The provider adapter registry from PR19 is integrated behind the PR20 zero-dollar guard. A provider's self-declared `*_COST_CLASS=free` value is not accepted as proof of zero price. Every exact provider/model pair must be present in a trusted runtime-verified free-model evidence map before it can be dispatched. At present, that evidence is supplied only by the authenticated AvalAI model catalog; OpenRouter, FreeLLMAPI, and Gemini adapters remain configured-but-blocked until an independent zero-price verification source and tests are implemented. All permitted agent calls continue through the repository allowlist, atomic quota reservation, and usage-ledger lifecycle. No provider fallback may bypass those controls.
