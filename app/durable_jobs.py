@@ -395,7 +395,8 @@ def requeue_dead_letter_job(job_id: str, repository: str, expected_updated_at: s
 
 
 def list_job_admin_events(*, repository: str | None = None, limit: int = 50,
-                          before_event_at: str | None = None) -> list[dict]:
+                          before_event_at: str | None = None,
+                          before_event_id: str | None = None) -> list[dict]:
     """List bounded operator audit metadata; never read payloads or tenant credentials."""
     if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
         raise JobQueueError("limit must be from 1 to 100")
@@ -414,9 +415,17 @@ def list_job_admin_events(*, repository: str | None = None, limit: int = 50,
     if repo:
         clauses.append("repository=?")
         params.append(repo)
+    if before_event_id is not None and before is None:
+        raise JobQueueError("before_event_at is required with before_event_id")
     if before:
-        clauses.append("event_at<?")
-        params.append(before)
+        if before_event_id:
+            cursor_id = _validate_text(before_event_id, "before_event_id", 36,
+                                       r"[0-9a-fA-F-]{36}")
+            clauses.append("(event_at<? OR (event_at=? AND event_id<?))")
+            params.extend([before, before, cursor_id])
+        else:
+            clauses.append("event_at<?")
+            params.append(before)
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     params.append(limit)
     conn = _connect()
