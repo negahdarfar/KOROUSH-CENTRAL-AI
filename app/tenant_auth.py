@@ -78,7 +78,7 @@ def create_tenant_key(*, user_id: str, team_id: str, repositories: list[str],
         parts = repo.split("/")
         if len(parts) != 2 or any(not part or part in {".", ".."} for part in parts):
             raise TenantAuthError("Repositories must use exact owner/repository identities")
-    supported = {"inference:chat", "usage:read"}
+    supported = {"inference:chat"}
     if not allowed_scopes or not set(allowed_scopes).issubset(supported):
         raise TenantAuthError("Unsupported or empty tenant scope")
     pepper = _pepper()
