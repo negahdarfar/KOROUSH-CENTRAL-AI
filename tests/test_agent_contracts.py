@@ -70,3 +70,35 @@ def test_output_envelope_is_validated():
     }) == {"agent_id": agent_id, "output": {"choices": []}}
     with pytest.raises(AgentContractError):
         validate_agent_output(agent_id, {"agent_id": "wrong", "output": []})
+
+
+def test_classifier_rejects_duplicates_after_whitespace_normalization():
+    with pytest.raises(AgentContractError):
+        validate_agent_input({
+            "agent_id": "koroush.text-classifier",
+            "text": "hello",
+            "labels": [" positive ", "positive"],
+        })
+
+
+def test_classifier_enforces_label_length_after_normalization():
+    with pytest.raises(AgentContractError):
+        validate_agent_input({
+            "agent_id": "koroush.text-classifier",
+            "text": "hello",
+            "labels": ["x" * 81, "other"],
+        })
+
+
+def test_agent_output_must_be_json_serializable_and_bounded():
+    agent_id = "koroush.text-summarizer"
+    with pytest.raises(AgentContractError):
+        validate_agent_output(agent_id, {
+            "agent_id": agent_id,
+            "output": {"not_json": object()},
+        })
+    with pytest.raises(AgentContractError):
+        validate_agent_output(agent_id, {
+            "agent_id": agent_id,
+            "output": {"large": "x" * 65537},
+        })
