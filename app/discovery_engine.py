@@ -99,11 +99,9 @@ def _valid_https_url(url: str) -> bool:
             for label in labels
         ):
             return False
-        return bool(re.fullmatch(r"/?[A-Za-z0-9._~!def _valid_https_url(url: str) -> bool:
-    return bool(re.fullmatch(r"https://[A-Za-z0-9.-]+(?::443)?(?:/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?", url))'()*+,;=:@%/-]*", parsed.path))
+        return bool(re.fullmatch(r"/?[A-Za-z0-9._~!$&'()*+,;=:@%/-]*", parsed.path))
     except ValueError:
         return False
-
 
 def _fresh(pushed_at: str | None, days: int, now: datetime) -> bool:
     if not pushed_at:
