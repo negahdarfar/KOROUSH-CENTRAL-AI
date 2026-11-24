@@ -53,6 +53,19 @@ CAPABILITY_CATALOG = [
 ]
 
 
+def require_approved_repository(repository: str | None, allowlist: set[str]) -> str:
+    """Bind gateway quota identity to an operator-approved repository allowlist."""
+    approved = {item.strip().lower() for item in allowlist if item.strip()}
+    normalized = (repository or "").strip().lower()
+    if not approved:
+        raise RuntimeError("Inference is disabled until ALLOWED_REPOS explicitly lists approved owner/repository identities")
+    if normalized not in approved:
+        raise ValueError("Repository is not explicitly approved in ALLOWED_REPOS for inference quota accounting")
+    if normalized.count("/") != 1 or any(part in {"", ".", ".."} for part in normalized.split("/")):
+        raise ValueError("Repository identity must use owner/repository format")
+    return normalized
+
+
 async def execute_avalai_surface(surface: str, payload: dict, repository: str | None = None) -> dict:
     """Send one JSON request to a fixed AvalAI route; never accept a caller URL."""
     if surface not in JSON_SURFACES:
@@ -65,12 +78,7 @@ async def execute_avalai_surface(surface: str, payload: dict, repository: str | 
     if llm["provider"] != "avalai" or not llm["api_key"] or not llm["base_url"]:
         raise RuntimeError("AvalAI provider is not configured")
 
-    repo_allowlist = {item.strip().lower() for item in settings.repo_allowlist if item.strip()}
-    normalized_repository = (repository or "").strip().lower()
-    if not repo_allowlist:
-        raise RuntimeError("Inference is disabled until ALLOWED_REPOS explicitly lists approved owner/repository identities")
-    if normalized_repository not in repo_allowlist:
-        raise ValueError("Repository is not explicitly approved in ALLOWED_REPOS for inference quota accounting")
+    normalized_repository = require_approved_repository(repository, settings.repo_allowlist)
 
     body = dict(payload)
     model = body.get("model")
