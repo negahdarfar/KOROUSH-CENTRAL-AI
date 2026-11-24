@@ -15,12 +15,15 @@ logger = logging.getLogger(__name__)
 def worker_enabled() -> bool:
     return os.getenv("JOB_WORKER_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
 
+def worker_ready() -> bool:
+    return worker_enabled() and bool(os.getenv("JOB_PAYLOAD_ENCRYPTION_KEY", "").strip())
+
 
 async def run_worker_loop() -> None:
     if not worker_enabled():
         logger.info("Durable job worker disabled by configuration")
         return
-    if not os.getenv("JOB_PAYLOAD_ENCRYPTION_KEY", "").strip():
+    if not worker_ready():
         logger.error("Durable job worker not started: JOB_PAYLOAD_ENCRYPTION_KEY is missing")
         return
     try:
