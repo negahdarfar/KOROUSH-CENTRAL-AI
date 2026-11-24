@@ -71,7 +71,8 @@ def test_tenant_and_scope_isolation(tmp_path, monkeypatch):
         publish_event(identity={"key_id":"x","team_id":"t","repositories":["negahdarfar/demo"],"scopes":[]},
             repository="negahdarfar/demo", event_type="repo.sync.requested", schema_version=1,
             producer="hub", consumer="youtube-worker", idempotency_key="x",
-            payload_ref="vault:11111111-1111-4111-8111-111111111111",\n            payload_hash=hashlib.sha256(b"{}").hexdigest())
+            payload_ref="vault:11111111-1111-4111-8111-111111111111",
+            payload_hash=hashlib.sha256(b"{}").hexdigest())
     publish(identity())
     other = identity(key="22222222-2222-4222-8222-222222222222")
     assert list_events(identity=other, repository="negahdarfar/demo") == []
