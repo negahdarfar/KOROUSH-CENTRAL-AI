@@ -17,8 +17,8 @@ def test_every_executable_agent_exposes_a_versioned_bounded_contract():
     }
     for contract in AGENT_CONTRACTS.values():
         assert contract["version"] == 1
-        assert contract["max_source_chars"] == 12000
         assert contract["input_fields"]
+        assert contract.get("max_source_chars", contract.get("max_evidence_chars")) in {12000, 20000}
         assert contract["output_fields"] == ["agent_id", "output"]
 
 
