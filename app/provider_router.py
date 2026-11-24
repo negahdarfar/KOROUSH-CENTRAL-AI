@@ -45,7 +45,8 @@ def configured_chat_providers(active_llm: dict, provider_order: list[str] | None
         if item:
             configs[item["provider"]] = item
     order = []
-    for name in [*(provider_order or []), active_name]:
+    requested_order = provider_order if provider_order is not None else [active_name]
+    for name in requested_order:
         normalized = str(name).strip().lower()
         if normalized and normalized not in order:
             order.append(normalized)
