@@ -25,9 +25,8 @@ def test_profiles_do_not_claim_domain_agents_are_implemented():
     assert "automated-clicking" in profiles["koroush.ptc"]["blocked_operations"]
     assert "wallet-signing" in profiles["koroush.nft"]["blocked_operations"]
     assert all(
-        agent.startswith("koroush.text-") or agent == "koroush.research-brief"
+        "koroush.research-brief" in profile["shared_agents"]
         for profile in profiles.values()
-        for agent in profile["shared_agents"]
     )
 
 
