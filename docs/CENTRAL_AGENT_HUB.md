@@ -159,6 +159,13 @@ Both official SDK `submit_agent` / `submitAgent` helpers pin `schema_version: 1`
 
 ## Evidence-grounded domain research brief
 
-The limited `koroush.research-brief` agent accepts `domain` (`forex`, `youtube`, `ptc`, or `nft`) and 1–8 caller-supplied evidence objects containing only `source_id` and `text`. Each excerpt is limited to 5,000 characters the combined evidence to 20,000 characters and 48 KiB after UTF-8 encoding. Source IDs must be unique. It routes through the same durable worker, tenant authorization, zero-cost guard, quota ledger, and encrypted payload lifecycle as other agents.
+The limited `koroush.research-brief` agent accepts `domain` (`forex`, `youtube`, `ptc`, or `nft`) and 1–8 caller-supplied evidence objects containing only `source_id` and `text`. Each excerpt is limited to 5,000 characters, the combined evidence to 20,000 characters, and the UTF-8 payload to 48 KiB. Optional provenance fields include publisher, HTTPS source URL, and timezone-aware observation timestamp. The service fingerprints each excerpt with SHA-256 and classifies timestamp freshness as fresh (24 hours), recent (7 days), stale, or unknown. This is metadata validation only: URLs are never fetched, timestamps are caller-supplied, and credibility remains explicitly unverified. Source IDs must be unique. It routes through the same durable worker, tenant authorization, zero-cost guard, quota ledger, and encrypted payload lifecycle as other agents.
 
 The report is instructed to distinguish evidence-backed findings, cautious inferences, contradictions, and evidence gaps, and to reference only supplied source IDs. It must not invent facts, trend claims, prices, payout status, or trade instructions. The agent performs no external browsing or source verification; callers must collect and assess evidence separately. All four downstream integration profiles list this agent as a shared capability, while their high-impact operations remain blocked and profile execution remains `not-enabled`.
+
+
+## Evidence provenance and freshness
+
+The research input accepts optional `publisher`, `source_url`, and `observed_at` fields per evidence item. Source URLs must use HTTPS and cannot embed credentials; the service does not fetch or dereference them. Observation timestamps must be ISO-8601 with an explicit timezone. The service computes a SHA-256 fingerprint of the supplied text and labels timestamp age as fresh (up to 24 hours), recent (up to 7 days), stale, or unknown.
+
+These checks improve traceability but do not verify publisher identity, URL ownership, source authenticity, or factual accuracy. Caller-supplied timestamps can be wrong. Credibility is always reported as unverified. The agent receives the fingerprint and freshness label, not the source URL, and is instructed not to treat freshness as proof of correctness.
