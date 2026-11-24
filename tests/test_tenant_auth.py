@@ -7,6 +7,7 @@ from app.tenant_auth import (
     create_tenant_key,
     list_tenant_keys,
     revoke_tenant_key,
+    authorize_job_execution,
 )
 
 
@@ -87,3 +88,28 @@ def test_invalid_github_repository_identity_is_rejected(tmp_path, monkeypatch, r
             team_id="youtube",
             repositories=[repository],
         )
+
+
+
+def test_job_execution_rechecks_inference_scope_by_job_type(tmp_path, monkeypatch):
+    setup_auth(tmp_path, monkeypatch)
+    created = create_tenant_key(
+        user_id="alice", team_id="content",
+        repositories=["org/content"],
+        scopes=["jobs:enqueue"],
+    )
+    assert authorize_job_execution(
+        created["key_id"], "org/content", "content", "maintenance.cleanup"
+    ) is True
+    assert authorize_job_execution(
+        created["key_id"], "org/content", "content", "agent.execute"
+    ) is False
+
+    ai_key = create_tenant_key(
+        user_id="bob", team_id="ai",
+        repositories=["org/ai"],
+        scopes=["jobs:enqueue", "inference:chat"],
+    )
+    assert authorize_job_execution(
+        ai_key["key_id"], "org/ai", "ai", "agent.execute"
+    ) is True
