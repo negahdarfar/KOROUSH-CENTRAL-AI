@@ -122,5 +122,5 @@ def select_avalai_model(
         allow_unknown_cost=allow_unknown_cost, allow_paid=allow_paid,
     )
     if not candidates:
-        raise RuntimeError("No eligible chat model is available under the current workflow cost policy")
+        raise RuntimeError("No chat-capable models are eligible under the current workflow cost policy")
     return candidates[0]["id"]
