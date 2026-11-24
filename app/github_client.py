@@ -38,11 +38,11 @@ def is_audit_candidate(item: dict) -> bool:
 
 def redact_secrets(content: str) -> str:
     patterns = [
-        (r"(?i)(api[_-]?key|secret|password|access[_-]?token)\\s*[:=]\\s*['\\\"]?[^\\s'\\\"]{8,}", r"\\1=[REDACTED]"),
-        (r"\\bgh[pousr]_[A-Za-z0-9_]{20,}\\b", "[REDACTED_GITHUB_TOKEN]"),
-        (r"\\bgithub_pat_[A-Za-z0-9_]{20,}\\b", "[REDACTED_GITHUB_TOKEN]"),
-        (r"\\bAKIA[0-9A-Z]{16}\\b", "[REDACTED_AWS_KEY]"),
-        (r"\\bsk-[A-Za-z0-9_-]{20,}\\b", "[REDACTED_API_KEY]"),
+        (r"(?i)(api[_-]?key|secret|password|access[_-]?token)\s*[:=]\s*['\"]?[^\s'\"]{8,}", r"\1=[REDACTED]"),
+        (r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b", "[REDACTED_GITHUB_TOKEN]"),
+        (r"\bgithub_pat_[A-Za-z0-9_]{20,}\b", "[REDACTED_GITHUB_TOKEN]"),
+        (r"\bAKIA[0-9A-Z]{16}\b", "[REDACTED_AWS_KEY]"),
+        (r"\bsk-[A-Za-z0-9_-]{20,}\b", "[REDACTED_API_KEY]"),
     ]
     for pattern, replacement in patterns:
         content = re.sub(pattern, replacement, content)
