@@ -16,7 +16,7 @@ from .job_payload_store import get_payload, put_payload, delete_payload, JobPayl
 
 logger = logging.getLogger(__name__)
 JobHandler = Callable[[dict], Awaitable[Any]]
-PolicyCheck = Callable[[str | None, str | None, str | None], bool]
+PolicyCheck = Callable[[str | None, str | None, str | None, str | None], bool]
 
 
 class WorkerConfigurationError(RuntimeError):
