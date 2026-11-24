@@ -155,7 +155,7 @@ _API_CATALOG = (
     {"id": "platform.manifest", "method": "GET", "path": "/api/platform/manifest", "auth": "public", "status": "available"},
     {"id": "agents.catalog", "method": "GET", "path": "/api/agents", "auth": "tenant-or-admin", "status": "available"},
     {"id": "agents.detail", "method": "GET", "path": "/api/agents/{agent_id}", "auth": "tenant-or-admin", "status": "available"},
-    {"id": "jobs.enqueue", "method": "POST", "path": "/api/jobs", "auth": "tenant:jobs:enqueue", "status": "available"},
+    {"id": "jobs.enqueue", "method": "POST", "path": "/api/jobs", "auth": "tenant:jobs:enqueue+inference:chat", "status": "available"},
     {"id": "jobs.status", "method": "GET", "path": "/api/jobs/{job_id}", "auth": "tenant:jobs:read", "status": "available"},
     {"id": "provider.avalai.execute", "method": "POST", "path": "/api/avalai/execute/{surface}", "auth": "tenant-or-admin", "status": "limited"},
     {"id": "provider.avalai.models", "method": "GET", "path": "/api/avalai/models", "auth": "admin", "status": "available"},
