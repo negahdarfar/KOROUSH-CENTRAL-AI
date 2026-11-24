@@ -34,6 +34,7 @@ def editable_snapshot_paths(snapshot: dict) -> set[str]:
         item["path"] for item in snapshot.get("files", [])
         if isinstance(item, dict) and isinstance(item.get("path"), str)
         and not item.get("contains_redactions", False)
+        and not item.get("content_truncated", False)
     }
 
 
