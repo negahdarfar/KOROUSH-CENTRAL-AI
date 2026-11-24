@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Iterable, Protocol
 import re
+import ipaddress
+from urllib.parse import urlsplit
 
 KINDS = {"repository", "agent", "model", "api", "tool", "dataset", "connector"}
 MAX_RESULTS = 50
@@ -28,8 +30,10 @@ class DiscoveryQuery:
             raise ValueError("unsupported discovery kind")
         if not self.terms or len(self.terms) > 8:
             raise ValueError("provide 1 to 8 search terms")
-        if any(not isinstance(t, str) or not t.strip() or len(t) > 80 for t in self.terms):
-            raise ValueError("search terms must be non-empty and at most 80 characters")
+        if any(not isinstance(t, str) or not t.strip() or len(t) > 80
+               or any(ord(ch) < 32 or ord(ch) == 127 or ch in {'"', chr(92)} for ch in t)
+               for t in self.terms):
+            raise ValueError("search terms must be 1-80 characters without control chars, quotes, or backslashes")
         if not 1 <= self.limit <= MAX_RESULTS:
             raise ValueError("limit must be between 1 and 50")
         if not 1 <= self.require_recent_days <= 3650:
@@ -73,7 +77,32 @@ def github_query(query: DiscoveryQuery) -> str:
 
 
 def _valid_https_url(url: str) -> bool:
-    return bool(re.fullmatch(r"https://[A-Za-z0-9.-]+(?::443)?(?:/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?", url))
+    """Accept ordinary public DNS HTTPS URLs only; reject IPs, userinfo and fragments."""
+    if not isinstance(url, str) or len(url) > 2048:
+        return False
+    try:
+        parsed = urlsplit(url)
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+            return False
+        if parsed.port not in (None, 443) or parsed.query or parsed.fragment:
+            return False
+        host = parsed.hostname.lower()
+        try:
+            ipaddress.ip_address(host)
+            return False
+        except ValueError:
+            pass
+        labels = host.split(".")
+        if len(labels) < 2 or any(
+            not label or len(label) > 63
+            or not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", label)
+            for label in labels
+        ):
+            return False
+        return bool(re.fullmatch(r"/?[A-Za-z0-9._~!def _valid_https_url(url: str) -> bool:
+    return bool(re.fullmatch(r"https://[A-Za-z0-9.-]+(?::443)?(?:/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?", url))'()*+,;=:@%/-]*", parsed.path))
+    except ValueError:
+        return False
 
 
 def _fresh(pushed_at: str | None, days: int, now: datetime) -> bool:
