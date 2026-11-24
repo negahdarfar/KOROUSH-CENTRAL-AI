@@ -7,6 +7,7 @@ import os
 import uuid
 
 from .job_handlers import default_job_handlers
+from .job_payload_store import JobPayloadError, _cipher
 from .job_worker import run_once
 
 logger = logging.getLogger(__name__)
@@ -16,7 +17,13 @@ def worker_enabled() -> bool:
     return os.getenv("JOB_WORKER_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
 
 def worker_ready() -> bool:
-    return worker_enabled() and bool(os.getenv("JOB_PAYLOAD_ENCRYPTION_KEY", "").strip())
+    if not worker_enabled():
+        return False
+    try:
+        _cipher()
+        return True
+    except JobPayloadError:
+        return False
 
 
 async def run_worker_loop() -> None:
