@@ -54,15 +54,19 @@ async def run_worker_loop() -> None:
                 worker_state["value"] = "running"
                 now = asyncio.get_running_loop().time()
                 if now - last_prune >= 300:
-                    removed = await asyncio.to_thread(prune_expired_payloads, limit=200)
-                    if removed:
-                        logger.info("Pruned %d expired encrypted job payload(s)", removed)
+                    try:
+                        removed = await asyncio.to_thread(prune_expired_payloads, limit=200)
+                        if removed:
+                            logger.info("Pruned %d expired encrypted job payload(s)", removed)
+                    except Exception:
+                        logger.warning("Expired payload cleanup failed; job execution will continue", exc_info=True)
                     last_prune = now
                 if outcome == "idle": await asyncio.sleep(poll_interval)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.exception("Durable job worker loop iteration failed")
+                worker_state["value"] = "degraded"
                 await asyncio.to_thread(record_worker_heartbeat, worker_id, "degraded")
                 await asyncio.sleep(poll_interval)
     except asyncio.CancelledError:
