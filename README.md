@@ -22,7 +22,7 @@ Official AvalAI API reference: https://docs.avalai.org/en/api-reference/introduc
 
 ## AvalAI multi-capability gateway
 
-The admin panel exposes a fixed, allow-listed JSON gateway for documented AvalAI API surfaces:
+The admin panel documents a fixed, allow-listed JSON gateway for AvalAI API surfaces. Under the strict USD 0.00 policy, only Chat Completions is currently executable; other surfaces are blocked until their own surface-specific zero-price evidence is independently verified:
 
 - Text/reasoning: Responses and Chat Completions
 - Structured intelligence: Decisions, System One and Extraction
@@ -96,7 +96,7 @@ Supported task classes: `general`, `coding`, `vision`, `fast`, `reasoning`, and 
 
 ### Per-repository preflight quotas and alerts
 
-Every agent and JSON-gateway inference now reserves capacity atomically in SQLite before contacting AvalAI. Requests without an explicit `owner/repository` identity are blocked. Cancelled/failed attempts release their reservation; successful calls replace the conservative token reservation with provider-reported token usage when available. Stale pending reservations expire after 15 minutes.
+Every agent and permitted JSON-gateway inference reserves capacity atomically in SQLite before contacting AvalAI. Gateway inference additionally requires a non-empty `ALLOWED_REPOS` operator allowlist and an exact approved `owner/repository` identity; caller-supplied arbitrary repository names are rejected. Cancelled/failed attempts release their reservation; successful calls replace the conservative token reservation with provider-reported token usage when available. Stale pending reservations expire after 15 minutes.
 
 Project safety defaults (not AvalAI's published free-tier limits) are:
 
@@ -128,3 +128,10 @@ Threshold alerts are deduplicated at 70%, 85%, and 100%. Admin-only `GET /api/us
 7. Verify `/api/version` reports the expected production commit before declaring activation complete.
 
 The internal quota is a conservative project safeguard. It is not a provider-side billing cap and cannot guarantee that an upstream free tier will remain available or free.
+
+
+### Strict gateway restrictions
+
+The USD 0.00 gateway currently permits only `chat_completions`, because the authenticated model catalog's input/output token pricing does not prove that image, audio, video, OCR, reranking, embeddings, or other specialized API surfaces are free. Those routes remain documented but blocked until reliable surface-specific zero-price evidence and dedicated tests exist.
+
+Set Railway `ALLOWED_REPOS` to a comma-separated list of exact approved `owner/repository` identities before enabling gateway inference, for example `org/project-a,org/project-b`. If the allowlist is empty, gateway inference fails closed. This allowlist is an operator approval boundary, not end-user authentication; keep the admin API key private.
