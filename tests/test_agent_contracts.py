@@ -142,3 +142,14 @@ def test_research_brief_rejects_combined_evidence_over_limit():
                 for i in range(5)
             ],
         })
+
+def test_research_brief_rejects_utf8_payloads_over_byte_limit():
+    with pytest.raises(AgentContractError):
+        validate_agent_input({
+            "agent_id": "koroush.research-brief",
+            "domain": "forex",
+            "evidence": [
+                {"source_id": f"unicode-{i}", "text": "😀" * 4000}
+                for i in range(4)
+            ],
+        })
