@@ -5,6 +5,8 @@ capabilities and are not falsely exposed through this JSON-only endpoint.
 """
 from __future__ import annotations
 
+import logging
+
 import httpx
 
 from .config import settings
@@ -12,6 +14,8 @@ from .avalai import list_avalai_model_catalog
 from .model_router import rank_avalai_models
 from .usage_ledger import record_usage, normalize_usage
 from .quota_guard import reserve_inference, complete_reservation, cancel_reservation
+
+logger = logging.getLogger(__name__)
 
 
 # Only fixed relative paths are allowed. Callers cannot choose arbitrary URLs.
@@ -96,8 +100,11 @@ async def execute_avalai_surface(surface: str, payload: dict, repository: str | 
                 raise RuntimeError("AvalAI returned a non-JSON response on a JSON surface") from exc
             request_id = response.headers.get("avalai-request-id") or response.headers.get("x-request-id") or data.get("id")
             prompt_tokens, completion_tokens, total_tokens = normalize_usage(data.get("usage"))
-            record_usage(repository=repository, provider="avalai", model=model, surface=surface,
-                         usage=data.get("usage"), provider_request_id=request_id)
+            try:
+                record_usage(repository=repository, provider="avalai", model=model, surface=surface,
+                             usage=data.get("usage"), provider_request_id=request_id)
+            except Exception:
+                logger.exception("Usage ledger write failed after successful gateway inference")
             complete_reservation(reservation_id, total_tokens or prompt_tokens + completion_tokens)
             reservation_id = None
             return {
