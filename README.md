@@ -96,7 +96,7 @@ Supported task classes: `general`, `coding`, `vision`, `fast`, `reasoning`, and 
 
 ### Per-repository preflight quotas and alerts
 
-Every agent and permitted JSON-gateway inference reserves capacity atomically in SQLite before contacting AvalAI. Gateway inference additionally requires a non-empty `ALLOWED_REPOS` operator allowlist and an exact approved `owner/repository` identity; caller-supplied arbitrary repository names are rejected. Cancelled/failed attempts release their reservation; successful calls replace the conservative token reservation with provider-reported token usage when available. Stale pending reservations expire after 15 minutes.
+Every agent and permitted JSON-gateway inference reserves capacity atomically in SQLite before contacting AvalAI. Both agent inference and gateway inference require a non-empty `ALLOWED_REPOS` operator allowlist and an exact approved `owner/repository` identity; caller-supplied arbitrary repository names are rejected before model-catalog or inference requests. Quota keys are normalized to lowercase, and malformed repository identities fail closed. Cancelled/failed attempts release their reservation; successful calls replace the conservative token reservation with provider-reported token usage when available. Stale pending reservations expire after 15 minutes.
 
 Project safety defaults (not AvalAI's published free-tier limits) are:
 
@@ -134,4 +134,4 @@ The internal quota is a conservative project safeguard. It is not a provider-sid
 
 The USD 0.00 gateway currently permits only `chat_completions`, because the authenticated model catalog's input/output token pricing does not prove that image, audio, video, OCR, reranking, embeddings, or other specialized API surfaces are free. Those routes remain documented but blocked until reliable surface-specific zero-price evidence and dedicated tests exist.
 
-Set Railway `ALLOWED_REPOS` to a comma-separated list of exact approved `owner/repository` identities before enabling gateway inference, for example `org/project-a,org/project-b`. If the allowlist is empty, gateway inference fails closed. This allowlist is an operator approval boundary, not end-user authentication; keep the admin API key private.
+Set Railway `ALLOWED_REPOS` to a comma-separated list of approved `owner/repository` identities before enabling any agent or gateway inference, for example `org/project-a,org/project-b`. If the allowlist is empty, all inference paths fail closed. This allowlist is an operator approval boundary, not end-user authentication; keep the admin API key private.
