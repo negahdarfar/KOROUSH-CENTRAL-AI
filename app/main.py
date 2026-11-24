@@ -50,7 +50,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="KOROUSH CENTRAL AI",
-    version="0.3.0",
+    version="0.4.0",
     description="Private, audit-first GitHub engineering agent",
     lifespan=lifespan,
 )
