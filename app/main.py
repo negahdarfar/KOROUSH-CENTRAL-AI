@@ -156,22 +156,33 @@ document.getElementById('check').addEventListener('click',async()=>{
 });
 document.getElementById('loadModels').addEventListener('click',async()=>{
  const out=document.getElementById('modelInfo');
+ const button=document.getElementById('loadModels');
  if(!adminKey){out.textContent='ابتدا اتصال را آزمایش کنید.';return;}
- out.textContent='در حال دریافت فهرست و مشخصات مدل‌ها...';
+ button.disabled=true;
+ out.textContent='در حال دریافت فهرست مدل‌ها از AvalAI...';
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),25000);
  try{
-  const r=await fetch('/api/avalai/models',{headers:headers()});
+  const r=await fetch('/api/avalai/models',{headers:headers(),signal:controller.signal,cache:'no-store'});
   const data=await r.json();
-  if(!r.ok)throw new Error(data.detail||'خطا در دریافت مدل‌ها');
+  if(!r.ok)throw new Error(data.detail||'خطا در دریافت مدل‌ها (HTTP '+r.status+')');
   const select=document.getElementById('model');
   select.innerHTML='<option value="">مدل پیش‌فرض Railway</option>';
   for(const item of data.models){
    const option=document.createElement('option');
    option.value=item.id;
-   option.textContent=item.id+' — '+(item.mode||'نوع نامشخص');
+   option.textContent=item.id;
    select.appendChild(option);
   }
-  out.textContent='تعداد مدل‌های قابل مشاهده: '+data.count+'؛ فقط مدل‌های chat برای تحلیل و پیشنهاد اصلاح متنی مناسب‌اند.';
- }catch(e){out.textContent='دریافت فهرست مدل‌ها ناموفق بود: '+e.message;}
+  out.textContent='تعداد مدل‌های فهرست حساب: '+data.count+'؛ این فهرست فقط شناسه مدل‌ها را نشان می‌دهد و نوع/قابلیت هر مدل از این پاسخ قابل تأیید نیست.';
+ }catch(e){
+  out.textContent=e.name==='AbortError'
+   ?'مهلت دریافت فهرست تمام شد (۲۵ ثانیه). اتصال سرویس یا AvalAI را بررسی و دوباره تلاش کنید.'
+   :'دریافت فهرست مدل‌ها ناموفق بود: '+e.message;
+ }finally{
+  clearTimeout(timer);
+  button.disabled=false;
+ }
 });
 document.getElementById('runCapability').addEventListener('click',async()=>{
  const surface=document.getElementById('surface').value;
@@ -347,8 +358,14 @@ async def diagnostics(
 async def avalai_models(x_admin_key: str | None = Header(default=None)):
     require_admin(x_admin_key)
     try:
-        models = await list_avalai_models()
+        # Keep the interactive model picker lightweight: one authenticated /models
+        # request only. Per-model detail fan-out is intentionally excluded here.
+        models = await asyncio.wait_for(list_avalai_model_catalog(), timeout=18)
         return {"provider": "avalai", "count": len(models), "models": models}
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="AvalAI model catalog request timed out")
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="AvalAI model catalog request timed out")
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except httpx.HTTPStatusError as exc:
