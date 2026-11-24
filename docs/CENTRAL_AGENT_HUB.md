@@ -33,7 +33,7 @@ async with CentralAIClient(
     catalog = await central.agents()
     job = await central.submit_job(
         job_type="chat.completion",
-        payload={"task": "summarize", "input": "example"},
+        payload={"task": "general", "messages": [{"role": "user", "content": "Summarize this example."}], "max_tokens": 500},
         idempotency_key="stable-operation-id",
     )
 ```
@@ -69,3 +69,31 @@ The first iteration provides discovery and a Python integration client. It does 
 ## Provider consolidation status
 
 The manifest exposes the current provider integration state. AvalAI is the only provider adapter represented as partially available in this hub branch. OpenRouter, FreeLLMAPI, and Gemini remain planned integrations until their adapters are reviewed, tested against real account metadata, and wired through the common routing and usage policy. A provider name, model label, or `free` suffix is never sufficient evidence of zero price. The global zero-cost policy must reject unknown or paid pricing unless a separately approved budget policy is introduced.
+
+
+## Node.js SDK
+
+For JavaScript/TypeScript repositories, a dependency-free Node.js client is provided at `sdk/node/koroush-central.mjs`. It uses native `fetch` (Node.js 18+), requires HTTPS for remote endpoints, and does not include tenant keys in thrown error messages.
+
+```js
+import { CentralAIClient } from "./sdk/node/koroush-central.mjs";
+
+const central = new CentralAIClient({
+  baseUrl: process.env.KOROUSH_CENTRAL_URL,
+  tenantKey: process.env.KOROUSH_TENANT_API_KEY,
+  repository: "owner/repository",
+});
+
+const agents = await central.agents();
+const job = await central.submitJob({
+  jobType: "chat.completion",
+  idempotencyKey: "stable-operation-id",
+  payload: {
+    task: "general",
+    messages: [{ role: "user", content: "Summarize this example." }],
+    max_tokens: 500,
+  },
+});
+```
+
+The SDK does not create tenant keys. Provision each repository/team identity through the operator-controlled onboarding process and store the resulting key only in that repository's secret manager.
