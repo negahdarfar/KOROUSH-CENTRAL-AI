@@ -59,11 +59,19 @@ def test_repo_specific_limits_override_wildcard(tmp_path, monkeypatch):
     monkeypatch.setenv("USAGE_DB_PATH", str(tmp_path / "quota.sqlite3"))
     monkeypatch.setenv(
         "KOROUSH_REPO_QUOTAS",
-        '{"*":{"requests_per_day":1},"org/repo":{"requests_per_day":2}}',
+        '{"*":{"requests_per_day":1},"Org/Repo":{"requests_per_day":2}}',
     )
-    first = reserve_inference("org/repo", {"input": "one"})
+    first = reserve_inference("ORG/REPO", {"input": "one"})
     second = reserve_inference("org/repo", {"input": "two"})
     with pytest.raises(QuotaExceeded):
         reserve_inference("org/repo", {"input": "three"})
     cancel_reservation(first)
     cancel_reservation(second)
+
+
+
+@pytest.mark.parametrize("repository", ["owner", "owner/", "/repo", "owner/../repo", "owner/repo with spaces", "owner//repo"])
+def test_invalid_repository_identity_is_rejected_before_quota_reservation(tmp_path, monkeypatch, repository):
+    monkeypatch.setenv("USAGE_DB_PATH", str(tmp_path / "invalid.sqlite3"))
+    with pytest.raises(QuotaExceeded, match="valid owner/name"):
+        reserve_inference(repository, {"input": "hello"})
