@@ -32,3 +32,19 @@ def test_compatibility_detects_new_required_and_tightened_bounds():
     breaking={"type":"object","properties":{"name":{"type":"string","minLength":3},"extra":{"type":"integer"}},"required":["name","extra"]}
     assert compatibility_report(old,safe)["compatible"] is True
     assert compatibility_report(old,breaking)["compatible"] is False
+
+def test_enum_values_with_same_serialized_length_are_distinct():
+    schema={"type":"string","enum":["cat","dog"]}
+    validate_schema(schema)
+    validate_instance(schema,"dog")
+    with pytest.raises(SchemaValidationError): validate_instance(schema,True)
+
+def test_compatibility_compares_enum_values_not_serialized_lengths():
+    old={"type":"string","enum":["cat","dog"]}
+    new={"type":"string","enum":["cat","fox"]}
+    report=compatibility_report(old,new)
+    assert report["compatible"] is False
+    assert any("enum" in reason for reason in report["reasons"])
+
+def test_non_finite_numbers_rejected():
+    with pytest.raises(SchemaValidationError): validate_schema({"type":"number","minimum":float("inf")})
