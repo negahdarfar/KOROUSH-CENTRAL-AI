@@ -2,7 +2,7 @@ import asyncio
 
 from app.durable_jobs import enqueue_tenant_job
 from app.job_worker import run_once
-from app.job_payload_store import put_payload
+from app.job_payload_store import put_payload, get_payload
 from cryptography.fernet import Fernet
 
 
@@ -51,3 +51,25 @@ def test_worker_rejects_revoked_or_unassigned_tenant_before_handler(tmp_path, mo
                                   policy_check=lambda *_: False))
     assert result == "rejected"
     assert called == []
+
+
+
+def test_worker_persists_handler_result_as_encrypted_payload(tmp_path, monkeypatch):
+    monkeypatch.setenv("USAGE_DB_PATH", str(tmp_path / "job-results.sqlite3"))
+    monkeypatch.setenv("JOB_PAYLOAD_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    payload_ref = put_payload({"messages": [{"role": "user", "content": "hello"}]})
+    job = enqueue_tenant_job("org/repo", "audit.run", payload_ref, "result-request",
+                             tenant_identity=_identity())
+
+    async def handler(claimed):
+        return {"answer": "completed", "job": claimed["id"]}
+
+    result = asyncio.run(run_once("worker-results", {"audit.run": handler},
+                                  policy_check=lambda *_: True))
+    assert result == "succeeded"
+    from app.durable_jobs import tenant_job_status
+    status = tenant_job_status(job["id"], repository="org/repo", tenant_identity=_identity())
+    assert status["status"] == "succeeded"
+    assert get_payload(status["result_ref"]) == {
+        "result": {"answer": "completed", "job": job["id"]}
+    }
