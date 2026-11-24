@@ -54,6 +54,26 @@ small{color:#b9c6d8}
 <button id="loadModels">دریافت فهرست مدل‌های مجاز حساب AvalAI</button>
 <select id="model"><option value="">مدل پیش‌فرض Railway</option></select>
 <small id="modelInfo">پس از دریافت فهرست، مدل موردنظر را انتخاب کنید. برای کارهای متنی، مدل‌های chat مناسب‌اند.</small>
+<hr><h3>درگاه چندقابلیتی AvalAI</h3>
+<p>از فهرست زیر یک API را انتخاب و بدنه JSON متناسب با مستندات همان قابلیت را ارسال کنید. مدل انتخابی باید در فهرست مجاز حساب باشد.</p>
+<select id="surface">
+<option value="responses">Responses / استدلال و چندرسانه‌ای</option>
+<option value="chat_completions">Chat Completions / چت و بینایی</option>
+<option value="decisions">Decisions / تصمیم‌گیری</option>
+<option value="systemone">System One</option>
+<option value="extraction">Extraction / استخراج داده</option>
+<option value="embeddings">Embeddings / بردارسازی</option>
+<option value="images_generations">Image Generation / تولید تصویر</option>
+<option value="audio_speech">Text to Speech / تولید گفتار</option>
+<option value="moderations">Moderation / ایمنی محتوا</option>
+<option value="rerank">Rerank / رتبه‌بندی نتایج</option>
+<option value="ocr">OCR / تشخیص متن تصویر</option>
+<option value="videos">Video / عملیات ویدئویی</option>
+</select>
+<textarea id="apiPayload">{ "model": "MODEL_ID", "input": "Hello" }</textarea>
+<button id="runCapability">اجرای API انتخاب‌شده</button>
+<pre id="capabilityResult">ابتدا مدل‌ها را بارگذاری کنید؛ سپس بدنه درخواست را مطابق مستندات تنظیم کنید.</pre>
+<p><small>قابلیت‌های صوتی ورودی، ویرایش تصویر، فایل و Batch به بارگذاری multipart یا انتقال زنده نیاز دارند و هنوز از این درگاه JSON اجرا نمی‌شوند.</small></p>
 <hr><h3>پیشنهاد اصلاح کد با هوش مصنوعی</h3>
 <input id="owner" value="negahdarfar" placeholder="GitHub owner">
 <input id="repo" placeholder="نام مخزن">
@@ -94,6 +114,23 @@ document.getElementById('loadModels').addEventListener('click',async()=>{
   }
   out.textContent='تعداد مدل‌های قابل مشاهده: '+data.count+'؛ فقط مدل‌های chat برای تحلیل و پیشنهاد اصلاح متنی مناسب‌اند.';
  }catch(e){out.textContent='دریافت فهرست مدل‌ها ناموفق بود: '+e.message;}
+});
+document.getElementById('runCapability').addEventListener('click',async()=>{
+ const surface=document.getElementById('surface').value;
+ const out=document.getElementById('capabilityResult');
+ if(!adminKey){out.textContent='ابتدا اتصال مدیریتی را آزمایش کنید.';return;}
+ let payload;
+ try{payload=JSON.parse(document.getElementById('apiPayload').value);}
+ catch(e){out.textContent='JSON نامعتبر است: '+e.message;return;}
+ const selected=document.getElementById('model').value;
+ if(selected)payload.model=selected;
+ out.textContent='در حال ارسال درخواست به AvalAI...';
+ try{
+  const r=await fetch('/api/avalai/execute/'+encodeURIComponent(surface),{
+   method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({payload})
+  });
+  const data=await r.json();out.textContent=JSON.stringify(data,null,2);
+ }catch(e){out.textContent='خطا در درخواست: '+e.message;}
 });
 document.getElementById('propose').addEventListener('click',async()=>{
  const owner=document.getElementById('owner').value.trim();
