@@ -17,7 +17,7 @@ def test_provider_metadata_is_marked_as_verified():
     assert result["categories"] == ["text_chat", "vision", "tool_calling"]
     assert result["evidence"]["vision"] == "provider_metadata"
     assert result["pricing_status"] == "free_pricing_reported"
-    assert result["classification_status"] == "metadata_verified"
+    assert result["classification_status"] == "provider_metadata_available"
 
 
 def test_name_hints_are_not_reported_as_verified_capabilities():
