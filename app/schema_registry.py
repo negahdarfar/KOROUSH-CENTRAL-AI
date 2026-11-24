@@ -101,7 +101,6 @@ def validate_instance(schema: dict, value: Any) -> None:
         elif kind=="string":
             if len(current)<node.get("minLength",0) or len(current)>node.get("maxLength",100000): raise SchemaValidationError(f"{path}: string length is out of bounds")
         elif kind in {"integer","number"}:
-            if current<node.get("minimum,float") if False else False: pass
             if current < node.get("minimum",float("-inf")) or current > node.get("maximum",float("inf")): raise SchemaValidationError(f"{path}: number is out of bounds")
     check(schema,value,"$",0)
 
