@@ -1,16 +1,23 @@
-"""Admin-only aggregate observability for the durable job queue."""
+"""Admin-only, bounded dead-letter recovery endpoints."""
 from __future__ import annotations
 
 import re
 import secrets
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException
+from pydantic import BaseModel, Field
 
 from .config import settings
-from .durable_jobs import job_queue_summary
+from .durable_jobs import job_queue_summary, requeue_dead_letter_job
 from .worker_heartbeat import worker_health
 
 router = APIRouter()
+
+
+class DeadLetterRequeueRequest(BaseModel):
+    repository: str = Field(min_length=3, max_length=201)
+    expected_updated_at: str = Field(min_length=20, max_length=64)
+    confirm: bool
 
 
 def _require_admin(raw_key: str | None) -> None:
@@ -22,10 +29,9 @@ def _require_admin(raw_key: str | None) -> None:
 
 @router.get("/api/admin/jobs/summary")
 async def admin_job_summary(
-    repository: str | None = Query(default=None, min_length=3, max_length=201),
+    repository: str | None = None,
     x_admin_key: str | None = Header(default=None),
 ):
-    """Expose aggregate queue and worker health only to the operator admin key."""
     _require_admin(x_admin_key)
     if repository and not re.fullmatch(
         r"[a-z0-9][a-z0-9._-]{0,99}/[a-z0-9][a-z0-9._-]{0,99}",
@@ -33,17 +39,41 @@ async def admin_job_summary(
     ):
         raise HTTPException(status_code=422, detail="Invalid repository identity")
     try:
-        queue = job_queue_summary(repository)
-        worker = worker_health()
+        return {
+            "queue": job_queue_summary(repository),
+            "worker": worker_health(),
+            "notes": [
+                "Counts contain no job IDs, tenant IDs, prompts, payloads, secrets, or filesystem paths.",
+                "Worker heartbeat is a liveness signal, not proof of provider reachability.",
+                "Queue metrics reflect the configured SQLite database and require persistent storage for durability.",
+            ],
+        }
     except Exception as exc:
-        # Keep internal database errors and paths out of the public response.
         raise HTTPException(status_code=503, detail="Queue observability is temporarily unavailable") from exc
-    return {
-        "queue": queue,
-        "worker": worker,
-        "notes": [
-            "Counts contain no job IDs, tenant IDs, prompts, payloads, secrets, or filesystem paths.",
-            "Worker heartbeat is a liveness signal, not proof of provider reachability.",
-            "Queue metrics reflect the configured SQLite database and require persistent storage for durability.",
-        ],
-    }
+
+
+@router.post("/api/admin/jobs/{job_id}/requeue")
+async def admin_requeue_dead_letter(
+    job_id: str,
+    request: DeadLetterRequeueRequest,
+    x_admin_key: str | None = Header(default=None),
+):
+    """Requeue one dead-letter job only after explicit confirmation and version match."""
+    _require_admin(x_admin_key)
+    if request.confirm is not True:
+        raise HTTPException(status_code=400, detail="Explicit confirmation is required")
+    repository = request.repository.strip().lower()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,99}/[a-z0-9][a-z0-9._-]{0,99}", repository):
+        raise HTTPException(status_code=422, detail="Invalid repository identity")
+    if not re.fullmatch(r"[0-9a-fA-F-]{36}", job_id):
+        raise HTTPException(status_code=422, detail="Invalid job identifier")
+    try:
+        result = requeue_dead_letter_job(job_id, repository, request.expected_updated_at)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Dead-letter recovery is temporarily unavailable") from exc
+    if result is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Job is not recoverable: it may have changed, reached the retry limit, or its encrypted payload expired",
+        )
+    return {"requeued": True, "job": result}
