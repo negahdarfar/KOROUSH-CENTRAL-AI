@@ -57,3 +57,27 @@ def test_scopes_are_allowlisted(tmp_path, monkeypatch):
     setup_auth(tmp_path, monkeypatch)
     with pytest.raises(TenantAuthError, match="Unsupported"):
         create_tenant_key(user_id="alice", team_id="youtube", repositories=["org/shorts"], scopes=["admin:*"])
+
+
+
+@pytest.mark.parametrize(
+    "repository",
+    [
+        "org/repo/extra",
+        "org name/repo",
+        "org/repo name",
+        "https://github.com/org/repo",
+        "../repo",
+        "org/..",
+        "org/repo.git",
+        "org/repo?admin=true",
+    ],
+)
+def test_invalid_github_repository_identity_is_rejected(tmp_path, monkeypatch, repository):
+    setup_auth(tmp_path, monkeypatch)
+    with pytest.raises(TenantAuthError, match="valid exact GitHub"):
+        create_tenant_key(
+            user_id="alice",
+            team_id="youtube",
+            repositories=[repository],
+        )
