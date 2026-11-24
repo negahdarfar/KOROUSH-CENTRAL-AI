@@ -98,7 +98,9 @@ async def api_catalog(
     visible = []
     for api in list_apis(include_admin=False):
         auth = api["auth"]
-        if auth == "tenant:jobs:enqueue" and "jobs:enqueue" not in scopes:
+        if auth == "tenant:jobs:enqueue+inference:chat" and not {
+            "jobs:enqueue", "inference:chat"
+        }.issubset(scopes):
             continue
         if auth == "tenant:jobs:read" and "jobs:read" not in scopes:
             continue
