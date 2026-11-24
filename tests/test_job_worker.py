@@ -12,7 +12,7 @@ def _identity():
         "team_id": "team-a",
         "user_id": "user-a",
         "repositories": ["org/repo"],
-        "scopes": ["jobs:enqueue"],
+        "scopes": ["jobs:enqueue", "jobs:read"],
     }
 
 
