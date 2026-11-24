@@ -107,3 +107,28 @@ test("submitAgent pins the selected allowlisted agent and durable job type", asy
   assert.equal(requestBody.payload.schema_version, 1);
   assert.equal(client.headers, undefined);
 });
+
+test('extension sync is read-only and repository-bound', async () => {
+  let captured;
+  const client = new CentralAIClient({ baseUrl: 'https://central.example', tenantKey: 'kor_test', repository: 'Org/Repo', fetchImpl: async (url, options) => { captured = { url: String(url), options }; return new Response(JSON.stringify({ repository: 'org/repo', extensions: [] }), { status: 200 }); } });
+  const result = await client.syncExtensions({ kind: 'connector' });
+  assert.deepEqual(result.extensions, []);
+  assert.equal(captured.url, 'https://central.example/api/extensions?repository=org%2Frepo&kind=connector');
+  assert.equal(captured.options.method, 'GET');
+  assert.throws(() => client.extensions({ kind: 'executable' }), /unsupported extension kind/);
+});
+
+test('event SDK sends scoped event contracts without local execution', async () => {
+  const requests = [];
+  const client = new CentralAIClient({ baseUrl: 'https://central.example', tenantKey: 'kor_test', repository: 'org/repo', fetchImpl: async (url, options) => { requests.push({ url: String(url), options }); return new Response(JSON.stringify({ event_id: 'event-1', status: 'queued' }), { status: 202 }); } });
+  await client.publishEvent({ eventType: 'repo.sync.requested', consumer: 'repo-adapter', payload: { version: 1 }, idempotencyKey: 'sync-1' });
+  const body = JSON.parse(requests[0].options.body);
+  assert.equal(body.repository, 'org/repo');
+  assert.equal(body.event_type, 'repo.sync.requested');
+  assert.equal(body.payload.version, 1);
+  await client.claimEvent({ consumer: 'repo-adapter', workerId: 'worker-1' });
+  assert.ok(requests[1].url.endsWith('/api/events/claim'));
+  await client.settleEvent({ eventId: 'event-1', workerId: 'worker-1', success: true });
+  assert.ok(requests[2].url.endsWith('/api/events/event-1/settle'));
+  assert.throws(() => client.claimEvent({ consumer: 'x', workerId: 'w', leaseSeconds: 2 }), /leaseSeconds/);
+});
