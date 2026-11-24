@@ -85,3 +85,22 @@ def test_admin_api_catalog_includes_admin_routes(monkeypatch):
     ids = {item["id"] for item in result["apis"]}
     assert "github.repair.apply" in ids
     assert "operations.jobs.recovery" in ids
+
+
+
+def test_api_catalog_paths_match_registered_fastapi_routes():
+    from app.main import app
+
+    registered = set()
+    for route in app.routes:
+        path = getattr(route, "path", None)
+        methods = getattr(route, "methods", set()) or set()
+        if path:
+            for method in methods:
+                registered.add((method, path))
+    missing = [
+        (item["method"], item["path"])
+        for item in list_apis()
+        if (item["method"], item["path"]) not in registered
+    ]
+    assert not missing, f"API catalog contains unregistered routes: {missing}"
