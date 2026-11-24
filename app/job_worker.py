@@ -51,6 +51,9 @@ async def run_once(worker_id: str, handlers: dict[str, JobHandler],
                 delete_payload(result_ref)
             logger.warning("Job completion fenced: lease is no longer owned")
             return "lease_lost"
+        # Delete the input only after fenced completion succeeds; a lease-losing
+        # worker must leave it intact for the legitimate lease owner/reclaimer.
+        delete_payload(job["payload_ref"])
         return "succeeded"
     except asyncio.CancelledError:
         # Leave the lease to expire so another worker can safely reclaim it.
