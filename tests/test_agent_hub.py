@@ -126,7 +126,7 @@ def test_registry_advertises_only_fixed_executable_text_agents():
         "koroush.text-translator",
         "koroush.text-classifier",
     ):
-        assert agents[agent_id]["status"] == "available"
+        assert agents[agent_id]["status"] == "limited"
         assert agents[agent_id]["execution"] == "durable-job"
         assert agents[agent_id]["job_type"] == "agent.execute"
         assert "inference:chat" in agents[agent_id]["required_scopes"]
