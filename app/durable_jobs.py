@@ -56,7 +56,7 @@ def _connect() -> sqlite3.Connection:
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS ix_jobs_claim ON durable_jobs(status, available_at, lease_until)")
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(durable_jobs)").fetchall()}
-    for name, declaration in (("tenant_key_id", "TEXT"), ("team_id", "TEXT"), ("user_id", "TEXT"), ("result_ref", "TEXT"), ("payload_hash", "TEXT")):
+    for name, declaration in (("tenant_key_id", "TEXT"), ("team_id", "TEXT"), ("user_id", "TEXT"), ("result_ref", "TEXT"), ("payload_hash", "TEXT"), ("manual_requeues", "INTEGER NOT NULL DEFAULT 0")):
         if name not in columns:
             conn.execute(f"ALTER TABLE durable_jobs ADD COLUMN {name} {declaration}")
     conn.execute("CREATE INDEX IF NOT EXISTS ix_jobs_repo_created ON durable_jobs(repository, created_at)")
@@ -315,5 +315,65 @@ def job_queue_summary(repository: str | None = None) -> dict:
             "oldest_queued_age_seconds": oldest_age,
             "scope": "repository" if repo else "global",
         }
+    finally:
+        conn.close()
+
+
+
+def requeue_dead_letter_job(job_id: str, repository: str, expected_updated_at: str) -> dict | None:
+    """Requeue one dead-letter job with an unexpired encrypted payload and optimistic locking.
+
+    At most three operator requeues are allowed per job. Attempts reset for the
+    controlled replay, while the separate manual_requeues counter is retained.
+    """
+    job = _validate_text(job_id, "job_id", 36, r"[0-9a-fA-F-]{36}")
+    repo = _validate_text(repository.lower(), "repository", 201,
+                          r"[a-z0-9][a-z0-9._-]{0,99}/[a-z0-9][a-z0-9._-]{0,99}")
+    version = _validate_text(expected_updated_at, "expected_updated_at", 64,
+                             r"[0-9T:+.\-]{20,64}")
+    conn = _connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            """SELECT payload_ref, manual_requeues FROM durable_jobs
+               WHERE id=? AND repository=? AND status='dead_letter' AND updated_at=?""",
+            (job, repo, version),
+        ).fetchone()
+        if row is None or int(row["manual_requeues"] or 0) >= 3:
+            conn.execute("ROLLBACK")
+            return None
+        ref = row["payload_ref"]
+        if not isinstance(ref, str) or not re.fullmatch(r"vault:[0-9a-f-]{36}", ref):
+            conn.execute("ROLLBACK")
+            return None
+        payload = conn.execute(
+            "SELECT 1 FROM encrypted_job_payloads WHERE payload_id=? AND expires_at>?",
+            (ref[6:], _now().isoformat()),
+        ).fetchone()
+        if payload is None:
+            conn.execute("ROLLBACK")
+            return None
+        now = _now().isoformat()
+        cursor = conn.execute(
+            """UPDATE durable_jobs SET status='queued', attempts=0, available_at=?,
+               lease_owner=NULL, lease_until=NULL, last_error_code=NULL,
+               manual_requeues=manual_requeues+1, updated_at=?
+               WHERE id=? AND repository=? AND status='dead_letter' AND updated_at=?
+                 AND manual_requeues<3""",
+            (now, now, job, repo, version),
+        )
+        if cursor.rowcount != 1:
+            conn.execute("ROLLBACK")
+            return None
+        updated = conn.execute(
+            """SELECT id,repository,status,attempts,max_attempts,manual_requeues,
+                      available_at,updated_at FROM durable_jobs WHERE id=?""", (job,)
+        ).fetchone()
+        conn.execute("COMMIT")
+        return dict(updated)
+    except Exception:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
     finally:
         conn.close()
