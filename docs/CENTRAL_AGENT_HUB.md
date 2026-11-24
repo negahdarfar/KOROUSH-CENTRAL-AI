@@ -131,7 +131,7 @@ Example job body for the summarizer:
 }
 ```
 
-Submit it to `POST /api/jobs` with `X-Tenant-Key`. The result is available through the existing tenant-scoped `GET /api/jobs/{job_id}` endpoint. These are initial general-purpose text agents, not yet the specialized YouTube, Forex, PTC, or NFT agents. Specialized agents must be implemented and tested as separate bounded adapters before being advertised as executable.
+Submit it to `POST /api/jobs` with `X-Tenant-Key`. The result is available through the existing tenant-scoped `GET /api/jobs/{job_id}` endpoint. The `koroush.research-brief` agent also provides a bounded, evidence-grounded first research capability for Forex, YouTube, PTC, and NFT. It analyzes only caller-supplied source excerpts; it does not browse, fetch current market data, verify external claims, or perform domain actions. Domain-specific ingestion and decision agents remain separate future work.
 
 
 SDK convenience methods are available for fixed agent execution. In Python, call `await central.submit_agent(agent_id="koroush.text-summarizer", payload={"text": "..."}, idempotency_key="summary-001")`. In Node.js, call `await central.submitAgent({agentId: "koroush.text-summarizer", payload: {text: "..."}, idempotencyKey: "summary-001"})`. The SDK pins the chosen agent ID in the request body; callers cannot override it through payload fields.
@@ -154,3 +154,10 @@ The stable output envelope is `{ "agent_id": "...", "output": { ... } }`. The ou
 A future incompatible contract must use a new explicit version and tests; it must not silently reinterpret an existing v1 request. Consuming repositories should pin the contract version they have tested and fail closed when the central manifest advertises an unsupported version.
 
 Both official SDK `submit_agent` / `submitAgent` helpers pin `schema_version: 1` explicitly. Direct HTTP clients should also send this field to make their compatibility requirement explicit; omitting it remains supported as a v1 compatibility default.
+
+
+## Evidence-grounded domain research brief
+
+The limited `koroush.research-brief` agent accepts `domain` (`forex`, `youtube`, `ptc`, or `nft`) and 1–8 caller-supplied evidence objects containing only `source_id` and `text`. Each excerpt is limited to 5,000 characters and the combined evidence to 20,000 characters. Source IDs must be unique. It routes through the same durable worker, tenant authorization, zero-cost guard, quota ledger, and encrypted payload lifecycle as other agents.
+
+The report is instructed to distinguish evidence-backed findings, cautious inferences, contradictions, and evidence gaps, and to reference only supplied source IDs. It must not invent facts, trend claims, prices, payout status, or trade instructions. The agent performs no external browsing or source verification; callers must collect and assess evidence separately. All four downstream integration profiles list this agent as a shared capability, while their high-impact operations remain blocked and profile execution remains `not-enabled`.
