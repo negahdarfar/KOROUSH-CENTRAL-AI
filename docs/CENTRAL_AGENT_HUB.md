@@ -8,7 +8,8 @@ The control plane is not a shared data bucket. Repository identity, team identit
 
 ## Current discovery endpoints
 
-- `GET /api/platform/manifest`: public, non-secret platform and integration contract.
+- `GET /api/platform/manifest`: public, non-secret platform and integration contract, including the central API catalog.
+- `GET /api/apis?repository=owner/repository`: tenant-filtered API catalog; admins can inspect the complete catalog.
 - `GET /api/agents?repository=owner/repository`: tenant-visible agent catalog. Send `X-Tenant-Key`. Admins may send `X-Admin-Key` to inspect the complete catalog.
 - `GET /api/agents/{agent_id}?repository=owner/repository`: detail for one discoverable agent.
 - `POST /api/jobs`: submit an encrypted durable job using a tenant key with `jobs:enqueue`.
