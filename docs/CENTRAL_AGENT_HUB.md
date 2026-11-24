@@ -138,3 +138,17 @@ SDK convenience methods are available for fixed agent execution. In Python, call
 
 
 The three text agents are intentionally labeled `limited`, not production-ready: their handler code and tests are present, but execution still depends on the opt-in durable worker, encrypted payload key, tenant-auth configuration, and a currently eligible provider/model. Do not mark them fully available until the central runtime passes readiness and an end-to-end tenant job is verified in the deployed environment.
+
+## Versioned agent I/O contracts
+
+Executable text agents use a central, versioned contract registry in `app/agent_contracts.py`. Each catalog entry publishes `contract_version: 1`. Requests may omit `schema_version` for backward-compatible v1 behavior, or send `schema_version: 1` explicitly. Unsupported versions, unknown fields, unknown agent IDs, missing required fields, and oversized inputs are rejected before model routing.
+
+| Agent | v1 input | Bounds |
+|---|---|---|
+| `koroush.text-summarizer` | `text` | 12,000 source characters |
+| `koroush.text-translator` | `text`, `target_language` | 12,000 source characters; target up to 80 characters |
+| `koroush.text-classifier` | `text`, `labels` | 12,000 source characters; 2–20 unique labels, each up to 80 characters |
+
+The stable output envelope is `{ "agent_id": "...", "output": { ... } }`. The output envelope is checked before the job result is accepted. These contracts do not expose arbitrary tools, URLs, Python modules, shell execution, provider selection, or remote plugin loading. Existing v1 requests remain compatible when the schema version is omitted.
+
+A future incompatible contract must use a new explicit version and tests; it must not silently reinterpret an existing v1 request. Consuming repositories should pin the contract version they have tested and fail closed when the central manifest advertises an unsupported version.
