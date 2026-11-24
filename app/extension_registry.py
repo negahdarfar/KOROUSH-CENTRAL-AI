@@ -95,7 +95,7 @@ def _validate(manifest: dict) -> dict:
         if not isinstance(value, dict) or len(json.dumps(value, ensure_ascii=True)) > 8000:
             raise ExtensionRegistryError(f"{field} must be a JSON object no larger than 8 KB")
     item["status"] = item.get("status", "active")
-    if item["status"] not in {"active", "disabled"}:
+    if not isinstance(item["status"], str) or item["status"] not in {"active", "disabled"}:
         raise ExtensionRegistryError("status must be active or disabled")
     # Catalog entries never authorize code execution or imply verified free pricing.
     item["execution"] = "external-contract-only" if endpoint else "catalog-only"
@@ -110,18 +110,23 @@ def register_extension(manifest: dict) -> dict:
     conn = _connect()
     try:
         conn.execute("BEGIN IMMEDIATE")
+        existing = conn.execute(
+            "SELECT manifest_json FROM extension_registry WHERE extension_id=? AND version=?",
+            (item["extension_id"], item["version"]),
+        ).fetchone()
+        serialized = json.dumps(item, sort_keys=True)
+        if existing:
+            if existing["manifest_json"] != serialized:
+                raise ExtensionRegistryError("published extension versions are immutable; register a new version")
+            conn.commit()
+            return item
         conn.execute("""
             INSERT INTO extension_registry
             (extension_id,version,kind,name,protocol,endpoint,capabilities_json,domains_json,repositories_json,manifest_json,status,created_at,updated_at)
             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(extension_id,version) DO UPDATE SET
-              kind=excluded.kind,name=excluded.name,protocol=excluded.protocol,endpoint=excluded.endpoint,
-              capabilities_json=excluded.capabilities_json,domains_json=excluded.domains_json,
-              repositories_json=excluded.repositories_json,manifest_json=excluded.manifest_json,
-              status=excluded.status,updated_at=excluded.updated_at
         """, (item["extension_id"], item["version"], item["kind"], item["name"], item["protocol"],
               item.get("endpoint"), json.dumps(item["capabilities"]), json.dumps(item["domains"]),
-              json.dumps(item["repositories"]), json.dumps(item, sort_keys=True), item["status"], now, now))
+              json.dumps(item["repositories"]), serialized, item["status"], now, now))
         conn.commit()
     except Exception:
         conn.rollback()
