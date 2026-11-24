@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import re
 
 import httpx
@@ -12,15 +13,16 @@ from .workflow_registry import resolve_workflow_policy
 from .usage_ledger import record_usage, normalize_usage
 from .quota_guard import reserve_inference, complete_reservation, cancel_reservation
 from .avalai_gateway import require_approved_repository
-from .provider_router import verified_free_chat_providers
+from .provider_router import verified_free_chat_providers, configured_chat_providers
+from .provider_dispatch import verified_candidates, dispatch_chat_completion
 
 logger = logging.getLogger(__name__)
 
 
-def _record_chat_usage(repository: str, model: str, data: dict, response: httpx.Response, surface: str) -> None:
-    request_id = response.headers.get("avalai-request-id") or response.headers.get("x-request-id") or data.get("id")
+def _record_chat_usage(repository: str, provider: str, model: str, data: dict, response: httpx.Response, surface: str) -> None:
+    request_id = response.headers.get("x-request-id") or response.headers.get("avalai-request-id") or data.get("id")
     try:
-        record_usage(repository=repository, provider="avalai", model=model, surface=surface,
+        record_usage(repository=repository, provider=provider, model=model, surface=surface,
                      usage=data.get("usage"), provider_request_id=request_id)
     except Exception:
         logger.exception("Usage ledger write failed after successful inference")
@@ -67,14 +69,11 @@ async def _chat_completion_with_free_failover(
     requested_model: str | None = None,
     timeout: float = 90,
 ) -> tuple[dict, httpx.Response, str]:
-    """Try ranked, catalog-confirmed-free chat models on transient failures only."""
-    if llm.get("provider") != "avalai" or not llm.get("api_key") or not llm.get("base_url"):
-        raise RuntimeError("Inference blocked: only configured AvalAI with catalog-confirmed free models is allowed")
+    """Dispatch across configured providers only when exact zero-price evidence exists."""
+    if not llm.get("api_key") or not llm.get("base_url"):
+        raise RuntimeError("Inference blocked: a configured catalog-authenticated AvalAI connection is required for pricing evidence")
 
-    # Apply the same operator-approved repository boundary to every agent
-    # inference path, not only the direct JSON gateway.
     repository = require_approved_repository(repository, settings.repo_allowlist)
-
     catalog = await list_avalai_models()
     policy = resolve_workflow_policy(repository=repository)
     selected_task = policy.get("task") if policy.get("task") != "general" else task
@@ -86,63 +85,60 @@ async def _chat_completion_with_free_failover(
         allow_paid=False,
     )
     eligible_by_id = {item["id"]: item for item in eligible}
+    if not eligible:
+        raise RuntimeError("No catalog-confirmed free chat model is available")
+
     selected = requested_model or llm.get("model")
-    if selected:
-        if selected not in eligible_by_id:
-            raise ValueError("Requested/configured model is not catalog-confirmed free or is not chat-capable")
-        candidates = [selected]
-    else:
-        if not eligible:
-            raise RuntimeError("No catalog-confirmed free chat model is available")
-        max_retries = max(0, min(int(policy.get("max_retries", 1)), 3))
-        candidates = [item["id"] for item in eligible[: max_retries + 1]]
+    if selected and selected not in eligible_by_id:
+        raise ValueError("Requested/configured model is not catalog-confirmed free or is not chat-capable")
 
-    # Re-check the selected adapter against trusted runtime pricing evidence.
-    # A provider's self-declared COST_CLASS=free is never sufficient.
-    evidence_model = selected or candidates[0]
-    verified = verified_free_chat_providers(
-        {**llm, "model": evidence_model},
-        provider_order=["avalai"],
-        verified_free_models={"avalai": set(eligible_by_id)},
-    )
-    if not verified:
-        raise RuntimeError("Inference blocked: no adapter/model has trusted zero-price evidence")
+    retry_limit = max(0, min(int(policy.get("max_retries", 1)), 3)) + 1
+    provider_order = [
+        item.strip().lower()
+        for item in os.getenv("LLM_PROVIDER_ORDER", "avalai,openrouter,freellmapi,gemini").split(",")
+        if item.strip()
+    ]
+    active = {
+        "provider": str(llm.get("provider") or "avalai").lower(),
+        "base_url": llm["base_url"],
+        "api_key": llm["api_key"],
+        "model": selected or eligible[0]["id"],
+    }
+    configured = configured_chat_providers(active, provider_order)
+    # AvalAI models are ranked from its authenticated catalog. Other providers
+    # remain configured but are ineligible until their own exact model IDs are
+    # backed by trusted, independently verified zero-price evidence.
+    raw_candidates = []
+    for provider in configured:
+        if provider["provider"] == "avalai":
+            model_ids = [selected] if selected else [item["id"] for item in eligible[:retry_limit]]
+            raw_candidates.extend({**provider, "model": model_id} for model_id in model_ids)
+        else:
+            raw_candidates.append(provider)
 
-    url = llm["base_url"].rstrip("/") + "/chat/completions"
-    headers = {"Authorization": f"Bearer {llm['api_key']}"}
-    retryable_statuses = {408, 425, 429, 500, 502, 503, 504}
-    last_failure = "unknown transient provider failure"
+    evidence = {"avalai": set(eligible_by_id)}
+    candidates = verified_candidates(raw_candidates, evidence, requested_model=requested_model)
+    if not candidates:
+        raise RuntimeError("Inference blocked: no configured provider/model pair has trusted exact zero-price evidence")
+    candidates = candidates[:retry_limit]
+
     reservation_id = reserve_inference(repository, payload)
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            for index, model_id in enumerate(candidates):
-                body = {**payload, "model": model_id}
-                try:
-                    response = await client.post(url, headers=headers, json=body)
-                except (httpx.TimeoutException, httpx.NetworkError):
-                    last_failure = "network or timeout error"
-                    continue
-                if response.status_code in retryable_statuses:
-                    last_failure = f"retryable HTTP {response.status_code}"
-                    continue
-                response.raise_for_status()
-                data = response.json()
-                prompt_tokens, completion_tokens, total_tokens = normalize_usage(data.get("usage"))
-                _record_chat_usage(repository, model_id, data, response, "chat_completions")
-                try:
-                    complete_reservation(reservation_id, total_tokens or prompt_tokens + completion_tokens)
-                except Exception:
-                    logger.exception("Quota reservation finalization failed; reservation will expire conservatively")
-                reservation_id = None
-                return data, response, model_id
-
-        raise RuntimeError(
-            f"All permitted free-model attempts failed ({len(candidates)} attempted; last failure: {last_failure}). "
-            "No paid or unknown-price fallback was attempted."
+        data, response, provider_name, model_id = await dispatch_chat_completion(
+            candidates, payload, timeout=timeout
         )
+        prompt_tokens, completion_tokens, total_tokens = normalize_usage(data.get("usage"))
+        _record_chat_usage(repository, provider_name, model_id, data, response, "chat_completions")
+        try:
+            complete_reservation(reservation_id, total_tokens or prompt_tokens + completion_tokens)
+        except Exception:
+            logger.exception("Quota reservation finalization failed; reservation will expire conservatively")
+        reservation_id = None
+        return data, response, model_id
     finally:
         if reservation_id:
             cancel_reservation(reservation_id)
+
 
 
 def editable_snapshot_paths(snapshot: dict) -> set[str]:
