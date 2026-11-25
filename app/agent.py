@@ -15,6 +15,7 @@ from .quota_guard import reserve_inference, complete_reservation, cancel_reserva
 from .avalai_gateway import require_approved_repository
 from .provider_router import configured_chat_providers
 from .provider_dispatch import verified_candidates, dispatch_chat_completion
+from .model_performance import get_model_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ async def _resolve_model(llm: dict, requested_model: str | None, *, task: str = 
     selected_task = policy.get("task") if policy.get("task") != "general" else task
     eligible = rank_avalai_models(
         catalog,
+        performance_metrics=get_model_metrics("avalai"),
         task=selected_task,
         free_only=policy.get("free_only", False),
         allow_unknown_cost=policy.get("allow_unknown_cost", True),
