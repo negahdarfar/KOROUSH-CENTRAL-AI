@@ -80,7 +80,7 @@ def create_tenant_key(*, user_id: str, team_id: str, repositories: list[str],
     # malformed identities before they become tenant authorization boundaries.
     repository_pattern = re.compile(
         r"[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?/"
-        r"[a-z0-9](?:[a-z0-9._-]{0,98}[a-z0-9])?"
+        r"[a-z0-9][a-z0-9._-]{0,99}"
     )
     for repo in repos:
         if not repository_pattern.fullmatch(repo) or repo.endswith(".git"):
