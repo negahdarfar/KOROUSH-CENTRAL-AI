@@ -60,3 +60,79 @@ def test_domain_research_route_authenticates_and_enqueues_shared_workflow(monkey
     assert captured["job_type"] == "agent.workflow"
     assert captured["repository"] == "org/forex"
     assert len(captured["payload_hash"]) == 64
+
+ 
+
+def test_future_registered_connector_uses_generic_workflow_without_new_domain_code(monkeypatch):
+    import asyncio
+    from app import integration_routes as routes
+
+    captured = {}
+    monkeypatch.setattr(routes, "authenticate_tenant_key", lambda key: {
+        "key_id": "00000000-0000-0000-0000-000000000002",
+        "team_id": "team-future",
+        "user_id": "user-future",
+        "repositories": ["org/future-project"],
+        "scopes": ["jobs:enqueue", "inference:chat", "jobs:read"],
+    })
+    monkeypatch.setattr(routes, "list_extensions", lambda **kwargs: [{
+        "extension_id": "acme.future-project",
+        "version": "1.0.0",
+        "kind": "connector",
+        "status": "active",
+        "domains": ["general"],
+        "capabilities": ["research.workflow.v1"],
+        "repositories": ["org/future-project"],
+    }])
+    monkeypatch.setattr(routes, "worker_ready", lambda: True)
+    monkeypatch.setattr(routes, "put_payload", lambda payload: captured.update({"payload": payload}) or "payload-future")
+    monkeypatch.setattr(routes, "delete_payload", lambda ref: None)
+
+    def enqueue(repository, job_type, payload_ref, idempotency_key, **kwargs):
+        captured.update({"repository": repository, "job_type": job_type, "payload_ref": payload_ref})
+        return {
+            "id": "future-job", "repository": repository, "job_type": job_type,
+            "status": "queued", "idempotent_replay": False, "created_at": "2026-11-25T00:00:00Z",
+        }
+
+    monkeypatch.setattr(routes, "enqueue_tenant_job", enqueue)
+    request = routes.DomainResearchRequest(
+        repository="org/future-project",
+        idempotency_key="future-research-1",
+        evidence=[{
+            "source_id": "future-source-1",
+            "publisher": "Future project",
+            "source_url": "https://example.org/evidence",
+            "observed_at": "2026-11-25T00:00:00Z",
+            "text": "A future repository supplied a bounded evidence excerpt.",
+        }],
+    )
+    result = asyncio.run(routes.submit_domain_research(
+        "acme.future-project", request, x_tenant_key="kor_test"
+    ))
+    assert result["job_id"] == "future-job"
+    assert result["integration_id"] == "acme.future-project"
+    assert result["workflow_id"] == "acme.future-project@1.0.0.research.v1"
+    assert captured["payload"]["domain"] == "general"
+    assert captured["job_type"] == "agent.workflow"
+
+
+def test_unregistered_future_connector_is_rejected(monkeypatch):
+    import asyncio
+    from fastapi import HTTPException
+    from app import integration_routes as routes
+
+    monkeypatch.setattr(routes, "authenticate_tenant_key", lambda key: {
+        "repositories": ["org/unknown"], "scopes": ["jobs:enqueue", "inference:chat"],
+    })
+    monkeypatch.setattr(routes, "list_extensions", lambda **kwargs: [])
+    request = routes.DomainResearchRequest(
+        repository="org/unknown", idempotency_key="unknown-1",
+        evidence=[{"source_id": "s1", "text": "bounded evidence"}],
+    )
+    try:
+        asyncio.run(routes.submit_domain_research("unknown.future", request, x_tenant_key="kor_test"))
+    except HTTPException as exc:
+        assert exc.status_code == 404
+    else:
+        raise AssertionError("unregistered integration must be rejected")
