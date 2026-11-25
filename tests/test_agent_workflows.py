@@ -83,3 +83,13 @@ def test_workflow_rejects_invalid_agent_output_without_claiming_success():
             "repository": "owner/repo",
             "payload": {"domain": "nft", "evidence": _evidence()},
         }, fake_agent))
+
+
+def test_normalized_provenance_payload_can_be_revalidated_by_durable_worker():
+    first_pass = validate_domain_workflow_input({
+        "domain": "forex",
+        "evidence": _evidence(),
+    })
+    second_pass = validate_domain_workflow_input(first_pass)
+    assert second_pass["domain"] == "forex"
+    assert second_pass["evidence"][0]["sha256"] == first_pass["evidence"][0]["sha256"]
