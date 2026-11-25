@@ -88,7 +88,7 @@ async def submit_domain_research(
 
     try:
         payload = validate_domain_workflow_input({
-            "domain": domain,
+            "domain": workflow_domain,
             "evidence": request.evidence,
             "target_language": request.target_language,
         })
@@ -111,8 +111,9 @@ async def submit_domain_research(
         return {
             "job_id": result["id"],
             "repository": result["repository"],
-            "domain": domain,
-            "workflow_id": f"koroush.{domain}.research.v1",
+            "domain": workflow_domain,
+            "integration_id": integration_id,
+            "workflow_id": workflow_id,
             "job_type": "agent.workflow",
             "status": result["status"],
             "idempotent_replay": result["idempotent_replay"],
