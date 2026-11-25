@@ -91,7 +91,9 @@ def publish_event(*, identity, repository, event_type, schema_version, producer,
             (identity["key_id"], repo, target, idem)).fetchone()
         replay = row is not None
         if row:
-            if row["event_type"] != kind or row["payload_hash"] != digest or row["producer"] != source:
+            if (row["event_type"] != kind or row["payload_hash"] != digest or row["producer"] != source
+                or row["schema_version"] != schema_version or row["max_attempts"] != max_attempts
+                or row["correlation_id"] != correlation or row["causation_id"] != causation):
                 raise EventBusError("idempotency key conflicts with an existing event")
         else:
             event_id = str(uuid.uuid4())
@@ -125,8 +127,12 @@ def claim_event(*, identity, repository, consumer, worker_id, lease_seconds=60):
     conn = _connect()
     try:
         conn.execute("BEGIN IMMEDIATE")
+        conn.execute("""UPDATE platform_events SET status='dead_letter',lease_owner=NULL,lease_until=NULL,updated_at=?
+          WHERE tenant_key_id=? AND repository=? AND consumer=? AND attempts>=max_attempts
+          AND (status='queued' OR (status='leased' AND lease_until<=?))""",
+          (now.isoformat(),identity["key_id"],repo,target,now.isoformat()))
         row = conn.execute("""SELECT * FROM platform_events
-          WHERE tenant_key_id=? AND repository=? AND consumer=? AND
+          WHERE tenant_key_id=? AND repository=? AND consumer=? AND attempts<max_attempts AND
           ((status='queued' AND available_at<=?) OR (status='leased' AND lease_until<=?))
           ORDER BY created_at LIMIT 1""",
           (identity["key_id"], repo, target, now.isoformat(), now.isoformat())).fetchone()
