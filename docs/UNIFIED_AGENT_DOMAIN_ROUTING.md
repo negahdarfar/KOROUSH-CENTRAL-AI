@@ -20,7 +20,7 @@ The four research-only endpoints are:
 - `POST /api/integrations/ptc/research`
 - `POST /api/integrations/nft/research`
 
-All use the same tenant header and encrypted durable queue. The tenant key must be assigned to the exact `owner/repository` and include `jobs:enqueue` and `inference:chat`. Add `jobs:read` to retrieve job results through `GET /api/jobs/{job_id}?repository=owner/repository`.
+All use the same tenant header and encrypted durable queue. The tenant key must be assigned to the exact `owner/repository` and include `jobs:enqueue`, `jobs:read`, and `inference:chat`. The enqueue endpoint requires all three because it returns a tenant-scoped result URL. Retrieve job results through `GET /api/jobs/{job_id}?repository=owner/repository`.
 
 Example request:
 
@@ -119,7 +119,7 @@ The four built-in adapters remain available. A fifth, tenth or later repository 
 4. The central service validates that the extension is active, has the `research.workflow.v1` capability, declares the `general` domain, and explicitly lists that exact repository. It then routes the request through the same encrypted queue, quota guard and three-agent workflow (four calls if translation is requested).
 5. Read the result with the tenant-scoped job status endpoint.
 
-The connector is visible in `GET /api/integrations` and `GET /api/extensions?repository=owner/repository&kind=connector`. Extension versions are immutable; publish a new semantic version for contract metadata changes.
+The public `GET /api/integrations` endpoint lists only the four stable built-in profiles. Registered connectors are deliberately excluded from global discovery and are visible only through tenant-scoped `GET /api/extensions?repository=owner/repository&kind=connector` with `registry:read`. Extension versions are immutable; publish a new semantic version for contract metadata changes.
 
 ### Important boundary
 
@@ -173,3 +173,39 @@ For the Forex OHLC v1 contract, register:
 The Forex consumer independently rejects private/local endpoints, follows no redirects, never forwards its tenant key to the provider, and validates the response's instrument identity, interval, timestamps, completed OHLC bars and price geometry. Its v1 provider response uses exact `symbol`, `interval`, and a `candles` array with timezone-aware `open_time`, `close_time`, `open`, `high`, `low`, `close`, and optional `volume`. Only public, no-key endpoints are supported in this first iteration.
 
 The Forex consumer discovers the catalog at runtime (five-minute cache), checks up to five eligible sources, and chooses the freshest valid completed bar. Adding a source that implements this stable protocol requires a new admin-approved manifest and the repository's `registry:read` scope, not a source-specific Forex code change. A new protocol, authenticated provider, paid feed, privileged operation, or different response contract still requires a reviewed adapter change. The central registry does not guarantee the source is free or accurate; the zero-cost field is an administrator attestation and must be backed by independent terms/pricing review.
+
+
+## 8. Reliability boundary and final integration architecture
+
+### Control plane and data plane
+
+- **Control plane:** repository identity, tenant/team ownership, key issuance/revocation, scopes, extension approval, immutable versions, pricing attestations, and policy decisions.
+- **Contract plane:** versioned agent I/O schemas, integration capabilities, event schemas, and SDK compatibility checks. A repository identifies itself and declares the contract version it supports; it never selects a Python module, URL, model provider, or arbitrary executable.
+- **Execution plane:** the shared encrypted job queue, fixed allow-listed handlers, zero-cost eligibility gate, quota reservation, and bounded workflow steps.
+- **Resource plane:** provider/model catalogs and metadata-only source/connector registries. Registry entries describe capabilities; they do not prove trust, price, correctness, or license rights and are not executable.
+- **Event plane:** tenant-scoped event publication/claim/settlement with idempotency, leases, correlation and causation identifiers. Consumers must tolerate at-least-once delivery.
+- **Observability plane:** job state, worker heartbeat, operational alerts, usage ledger, and provider/model latency and outcome metrics. Logs and telemetry must not contain prompts, response bodies, credentials, or raw tenant keys.
+
+### Repository onboarding invariant
+
+A new repository should require only:
+1. explicit owner/repository approval and a tenant key restricted to that exact repository;
+2. least-privilege scopes;
+3. an approved immutable connector manifest for an already supported capability;
+4. the official Python/Node SDK or a small HTTP adapter implementing the same contract;
+5. a successful authenticated end-to-end contract test before the repository is considered connected.
+
+No central code change is required only when the new repository uses an existing capability and protocol such as `research.workflow.v1`. A new data protocol, new privileged operation, or new execution behavior still requires reviewed central code and tests. This is intentional: metadata-only plugins prevent arbitrary third-party code execution.
+
+### Retry and checkpoint limitation
+
+The current research workflow is one durable job containing three sequential model stages and an optional fourth translation stage. Queue retries restart the workflow from the first stage; there is not yet a durable per-stage checkpoint/resume journal. A retry can therefore repeat earlier inference calls and consume additional provider quota. The workflow remains research-only and must not be extended with publishing, trading, payouts, account mutation, wallet signing, or other side effects until stage-level idempotency, encrypted checkpoint persistence, cancellation/compensation semantics, and explicit approval gates are implemented and tested.
+
+### Compatibility policy
+
+- Add optional fields without changing existing meanings.
+- Breaking input/output changes require a new major contract version and parallel support during migration.
+- Keep stable event type and schema identifiers; consumers reject unsupported major versions rather than guessing.
+- Use capability negotiation, not repository-name conditionals, for future integrations.
+- Keep provider/source adapters behind central policy checks; no connector may bypass the zero-cost, tenant, quota, or safety gates.
+- Treat integration health as **unverified** until contract tests and a real tenant-authenticated round trip succeed.
