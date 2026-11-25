@@ -29,6 +29,7 @@ from .agent_hub_routes import router as agent_hub_router
 from .job_admin_routes import router as job_admin_router
 from .worker_runtime import run_worker_loop, worker_enabled
 from .discovery_routes import router as discovery_router
+from .mcp_gateway import router as mcp_router
 
 from contextlib import asynccontextmanager
 
@@ -67,6 +68,7 @@ app.include_router(event_router)
 app.include_router(agent_hub_router)
 app.include_router(job_admin_router)
 app.include_router(discovery_router)
+app.include_router(mcp_router)
 
 
 
