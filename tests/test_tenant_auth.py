@@ -113,3 +113,6 @@ def test_job_execution_rechecks_inference_scope_by_job_type(tmp_path, monkeypatc
     assert authorize_job_execution(
         ai_key["key_id"], "org/ai", "ai", "agent.execute"
     ) is True
+    assert authorize_job_execution(
+        ai_key["key_id"], "org/ai", "ai", "agent.workflow"
+    ) is True
