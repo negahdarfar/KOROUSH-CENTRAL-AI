@@ -75,15 +75,18 @@ def test_future_registered_connector_uses_generic_workflow_without_new_domain_co
         "repositories": ["org/future-project"],
         "scopes": ["jobs:enqueue", "inference:chat", "jobs:read"],
     })
-    monkeypatch.setattr(routes, "list_extensions", lambda **kwargs: [{
-        "extension_id": "acme.future-project",
-        "version": "1.0.0",
-        "kind": "connector",
-        "status": "active",
-        "domains": ["general"],
-        "capabilities": ["research.workflow.v1"],
-        "repositories": ["org/future-project"],
-    }])
+    monkeypatch.setattr(routes, "list_extensions", lambda **kwargs: [
+        {
+            "extension_id": "acme.future-project",
+            "version": version,
+            "kind": "connector",
+            "status": "active",
+            "domains": ["general"],
+            "capabilities": ["research.workflow.v1"],
+            "repositories": ["org/future-project"],
+        }
+        for version in ("1.0.0", "1.2.0")
+    ])
     monkeypatch.setattr(routes, "worker_ready", lambda: True)
     monkeypatch.setattr(routes, "put_payload", lambda payload: captured.update({"payload": payload}) or "payload-future")
     monkeypatch.setattr(routes, "delete_payload", lambda ref: None)
@@ -112,7 +115,7 @@ def test_future_registered_connector_uses_generic_workflow_without_new_domain_co
     ))
     assert result["job_id"] == "future-job"
     assert result["integration_id"] == "acme.future-project"
-    assert result["workflow_id"] == "acme.future-project@1.0.0.research.v1"
+    assert result["workflow_id"] == "acme.future-project@1.2.0.research.v1"
     assert captured["payload"]["domain"] == "general"
     assert captured["job_type"] == "agent.workflow"
 
