@@ -126,3 +126,25 @@ The connector is visible in `GET /api/integrations` and `GET /api/extensions?rep
 This zero-code onboarding applies to the shared evidence → classification → summary → optional translation workflow. The central service does not download or execute plugin code, call arbitrary manifest endpoints, or trust a connector merely because it is registered. New specialized execution logic, new privileged operations, or a new external protocol still requires a reviewed central implementation and tests. A manifest is a discovery/authorization contract, not executable code, not proof of safety, and not proof of free pricing.
 
 The central API cannot create or safely distribute tenant credentials on behalf of an unreviewed repository. Repository approval and tenant-key issuance remain explicit administrator actions. Never place `X-Admin-Key` in a downstream repository.
+
+
+### Tenant-key provisioning example
+
+After setting `TENANT_AUTH_PEPPER` and `ADMIN_API_KEY` on the central deployment, an administrator provisions a key for the exact repository with:
+
+```http
+POST /api/admin/tenant-keys
+X-Admin-Key: <admin secret>
+Content-Type: application/json
+```
+
+```json
+{
+  "user_id": "future-project-adapter",
+  "team_id": "approved-team",
+  "repositories": ["owner/repository"],
+  "scopes": ["jobs:enqueue", "jobs:read", "inference:chat"]
+}
+```
+
+The API returns the raw tenant key once. Copy it directly into the target repository's GitHub Actions secret named `KOROUSH_CENTRAL_TENANT_KEY`; do not paste it into chat, commit it, or add it to logs. The central base URL goes into `KOROUSH_CENTRAL_BASE_URL`. Revoke and reissue a key if it is exposed.
