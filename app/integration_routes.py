@@ -39,24 +39,11 @@ def _tenant(raw_key: str | None) -> dict:
 
 @router.get("/api/integrations")
 async def integrations_catalog():
-    """List executable shared-core integration contracts without exposing secrets."""
-    dynamic = [
-        {
-            "id": item["extension_id"],
-            "name": item["name"],
-            "version": item["version"],
-            "status": item["status"],
-            "domains": item["domains"],
-            "capabilities": item["capabilities"],
-            "execution": "shared-general-research",
-            "api": f"POST /api/integrations/{item['extension_id']}/research",
-        }
-        for item in list_extensions(kind="connector")
-        if item.get("status") == "active"
-        and "general" in item.get("domains", [])
-        and "research.workflow.v1" in item.get("capabilities", [])
-    ]
-    return {"integrations": list_integration_profiles(), "registered_connectors": dynamic}
+    """List stable built-in profiles; dynamic connectors require tenant-scoped discovery."""
+    return {
+        "integrations": list_integration_profiles(),
+        "dynamic_discovery": "/api/extensions?repository=owner/repository&kind=connector",
+    }
 
 
 @router.post("/api/integrations/{domain}/research", status_code=202)
@@ -104,8 +91,13 @@ async def submit_domain_research(
         integration_id = extension["extension_id"]
         workflow_id = f"{integration_id}@{extension['version']}.research.v1"
     scopes = set(identity.get("scopes", []))
-    if not {"jobs:enqueue", "inference:chat"}.issubset(scopes):
-        raise HTTPException(status_code=403, detail="Tenant key lacks jobs:enqueue or inference:chat scope")
+    required_scopes = {"jobs:enqueue", "jobs:read", "inference:chat"}
+    missing_scopes = required_scopes - scopes
+    if missing_scopes:
+        raise HTTPException(
+            status_code=403,
+            detail="Tenant key lacks required scopes: " + ", ".join(sorted(missing_scopes)),
+        )
     if not worker_ready():
         raise HTTPException(status_code=503, detail="Durable job worker is disabled or not configured")
 
