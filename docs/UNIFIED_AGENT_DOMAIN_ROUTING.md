@@ -85,3 +85,44 @@ The admin-only `GET /api/models/performance` endpoint exposes aggregated runtime
 5. Confirm the returned job reaches `succeeded` and inspect its result via the tenant-scoped status endpoint.
 
 The code path is now executable in the central repository, but a downstream repository is not considered connected until its own client configuration and a successful authenticated end-to-end job are verified.
+
+
+## 6. Future repositories: register once, no central code change
+
+The four built-in adapters remain available. A fifth, tenth or later repository does not need a new route, Python handler, workflow graph or SDK release for the shared general-research capability. It uses the generic domain `general` and a versioned connector manifest.
+
+### One-time onboarding (admin-controlled)
+
+1. Approve the exact GitHub identity `owner/repository` and create a tenant key scoped to that repository. Minimum scopes: `jobs:enqueue`, `jobs:read`, `inference:chat`. Store the key only in that repository's GitHub Actions secrets or deployment secret store.
+2. Register a connector manifest through `POST /api/extensions` with `X-Admin-Key`. Example:
+
+```json
+{
+  "manifest": {
+    "extension_id": "acme.future-project",
+    "version": "1.0.0",
+    "kind": "connector",
+    "name": "Future Project Adapter",
+    "protocol": "koroush-research-v1",
+    "capabilities": ["research.workflow.v1"],
+    "domains": ["general"],
+    "repositories": ["acme/future-project"],
+    "description": "Uses the shared evidence research workflow",
+    "input_schema": {"type": "object"},
+    "output_schema": {"type": "object"},
+    "pricing": {"status": "unverified"}
+  }
+}
+```
+
+3. The new repository uses the generic SDK method `submit_integration_research` (Python) or `submitIntegrationResearch` (Node), passing `integration_id="acme.future-project"`, evidence, and a stable idempotency key.
+4. The central service validates that the extension is active, has the `research.workflow.v1` capability, declares the `general` domain, and explicitly lists that exact repository. It then routes the request through the same encrypted queue, quota guard and three-agent workflow (four calls if translation is requested).
+5. Read the result with the tenant-scoped job status endpoint.
+
+The connector is visible in `GET /api/integrations` and `GET /api/extensions?repository=owner/repository&kind=connector`. Extension versions are immutable; publish a new semantic version for contract metadata changes.
+
+### Important boundary
+
+This zero-code onboarding applies to the shared evidence → classification → summary → optional translation workflow. The central service does not download or execute plugin code, call arbitrary manifest endpoints, or trust a connector merely because it is registered. New specialized execution logic, new privileged operations, or a new external protocol still requires a reviewed central implementation and tests. A manifest is a discovery/authorization contract, not executable code, not proof of safety, and not proof of free pricing.
+
+The central API cannot create or safely distribute tenant credentials on behalf of an unreviewed repository. Repository approval and tenant-key issuance remain explicit administrator actions. Never place `X-Admin-Key` in a downstream repository.
