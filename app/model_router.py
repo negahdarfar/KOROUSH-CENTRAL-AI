@@ -6,6 +6,8 @@ forbid unknown or paid models through a workflow policy.
 """
 from __future__ import annotations
 
+from .model_intelligence import classify_chat_price
+
 _PREFERENCES = {
     "general": ("gpt-6.1-sol", "gpt-6-astra", "gemini-4-argon", "claude-opus-5-5", "deepseek-v4.1-flash", "gpt-6-luna"),
     "coding": ("gpt-6-astra", "gpt-5.3-codex", "claude-opus-5-5", "claude-sonnet-5-5", "gemini-4-argon", "glm-5.3", "deepseek-v4.1-flash"),
@@ -28,25 +30,7 @@ def _is_chat_candidate(item: dict) -> bool:
 
 
 def _cost_class(item: dict) -> str:
-    pricing = item.get("pricing")
-    values = []
-    def walk(value):
-        if isinstance(value, dict):
-            for nested in value.values():
-                walk(nested)
-        elif isinstance(value, (int, float)) and not isinstance(value, bool):
-            values.append(float(value))
-        elif isinstance(value, str):
-            try:
-                values.append(float(value))
-            except ValueError:
-                pass
-    walk(pricing)
-    if values and all(value == 0 for value in values):
-        return "free"
-    if any(value > 0 for value in values):
-        return "paid"
-    return "unknown"
+    return classify_chat_price(item.get("pricing"))
 
 
 def infer_task(task: str, description: str = "") -> str:
