@@ -5,6 +5,7 @@ import httpx
 import time
 
 from .model_performance import record_model_attempt
+from .quota_guard import reserve_inference, complete_reservation
 
 
 RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504}
@@ -41,7 +42,7 @@ def _headers(provider: str, api_key: str) -> dict[str, str]:
 
 
 async def dispatch_chat_completion(candidates: list[dict], payload: dict, *,
-                                   timeout: float = 90) -> tuple[dict, httpx.Response, str, str]:
+                                   timeout: float = 90, repository: str | None = None) -> tuple[dict, httpx.Response, str, str]:
     """Try only pre-verified candidates; fail closed and retry transient failures only."""
     if not candidates:
         raise RuntimeError("No provider/model pair has trusted exact zero-price evidence")
@@ -51,6 +52,10 @@ async def dispatch_chat_completion(candidates: list[dict], payload: dict, *,
             provider = config["provider"]
             model = config["model"]
             url = config["base_url"].rstrip("/") + "/chat/completions"
+            # Charge each attempted request conservatively, even on ambiguous network failures.
+            reservation = reserve_inference(repository, payload) if repository is not None else None
+            if reservation is not None:
+                complete_reservation(reservation, 0)
             started = time.perf_counter()
             try:
                 response = await client.post(
