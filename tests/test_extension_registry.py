@@ -106,3 +106,23 @@ def test_manifest_validates_nested_json_schemas_and_rejects_invalid_contracts():
         with pytest.raises(ExtensionRegistryError, match="supported bounded JSON Schema"):
             _validate(manifest(input_schema=schema))
 
+
+
+def test_future_repository_connector_can_register_generic_research_capability(tmp_path, monkeypatch):
+    from app import extension_registry
+    monkeypatch.setattr(extension_registry, "_db_path", lambda: tmp_path / "future.sqlite3")
+    item = register_extension(manifest(
+        extension_id="acme.future-project",
+        kind="connector",
+        name="Future Project Adapter",
+        protocol="koroush-research-v1",
+        capabilities=["research.workflow.v1"],
+        domains=["general"],
+        repositories=["acme/future-project"],
+    ))
+    visible = list_extensions(repository="acme/future-project", kind="connector")
+    assert item["extension_id"] == "acme.future-project"
+    assert len(visible) == 1
+    assert visible[0]["capabilities"] == ["research.workflow.v1"]
+    assert visible[0]["execution"] == "external-contract-only"
+    assert visible[0]["trust"] == "unverified"
