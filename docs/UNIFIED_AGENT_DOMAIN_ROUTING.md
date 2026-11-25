@@ -148,3 +148,28 @@ Content-Type: application/json
 ```
 
 The API returns the raw tenant key once. Copy it directly into the target repository's GitHub Actions secret named `KOROUSH_CENTRAL_TENANT_KEY`; do not paste it into chat, commit it, or add it to logs. The central base URL goes into `KOROUSH_CENTRAL_BASE_URL`. Revoke and reissue a key if it is exposed.
+
+
+## 7. Dynamic market-data source registry (metadata contract)
+
+The extension registry already accepts `kind=data_source` and supports tenant-scoped discovery through:
+
+```http
+GET /api/extensions?repository=owner/repository&kind=data_source
+X-Tenant-Key: <repository-scoped tenant key>
+```
+
+The tenant key must include `registry:read`. Registration remains admin-only through `POST /api/extensions` with `X-Admin-Key`. A source manifest is metadata only; the central service does not fetch the endpoint, proxy market data, execute provider code, or attest to licensing, correctness, or zero price.
+
+For the Forex OHLC v1 contract, register:
+- `kind=data_source`
+- `protocol=koroush-market-data-v1`
+- `capabilities=["market.ohlc.v1"]`
+- `domains=["forex"]` (or `["general"]` for an explicitly general source)
+- Exact repository allowlist, e.g. `["negahdarfar/daily-forex-analyze-"]`
+- HTTPS `endpoint` on the default port, with no embedded credentials
+- `pricing={"cost_usd":0,"zero_cost_attested_by_admin":true,"terms_url":"https://provider.example/terms"}`
+
+The Forex consumer independently rejects private/local endpoints, follows no redirects, never forwards its tenant key to the provider, and validates the response's instrument identity, interval, timestamps, completed OHLC bars and price geometry. Its v1 provider response uses exact `symbol`, `interval`, and a `candles` array with timezone-aware `open_time`, `close_time`, `open`, `high`, `low`, `close`, and optional `volume`. Only public, no-key endpoints are supported in this first iteration.
+
+The Forex consumer discovers the catalog at runtime (five-minute cache), checks up to five eligible sources, and chooses the freshest valid completed bar. Adding a source that implements this stable protocol requires a new admin-approved manifest and the repository's `registry:read` scope, not a source-specific Forex code change. A new protocol, authenticated provider, paid feed, privileged operation, or different response contract still requires a reviewed adapter change. The central registry does not guarantee the source is free or accurate; the zero-cost field is an administrator attestation and must be backed by independent terms/pricing review.
