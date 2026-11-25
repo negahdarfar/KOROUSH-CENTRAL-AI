@@ -168,7 +168,7 @@ For the Forex OHLC v1 contract, register:
 - `domains=["forex"]` (or `["general"]` for an explicitly general source)
 - Exact repository allowlist, e.g. `["negahdarfar/daily-forex-analyze-"]`
 - HTTPS `endpoint` on the default port, with no embedded credentials
-- `pricing={"cost_usd":0,"zero_cost_attested_by_admin":true,"terms_url":"https://provider.example/terms"}`
+- `pricing={"cost_usd":0,"zero_cost_attested_by_admin":true,"source_reviewed_by_admin":true,"terms_url":"https://provider.example/terms"}`
 
 The Forex consumer independently rejects private/local endpoints, follows no redirects, never forwards its tenant key to the provider, and validates the response's instrument identity, interval, timestamps, completed OHLC bars and price geometry. Its v1 provider response uses exact `symbol`, `interval`, and a `candles` array with timezone-aware `open_time`, `close_time`, `open`, `high`, `low`, `close`, and optional `volume`. Only public, no-key endpoints are supported in this first iteration.
 
