@@ -144,3 +144,53 @@ def test_sdk_submit_agent_binds_fixed_agent_id_and_job_type():
             await client.close()
 
     asyncio.run(run())
+
+
+
+def test_sdk_submits_domain_research_to_the_fixed_shared_workflow():
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(202, json={"job_id": "domain-job", "status": "queued"})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = CentralAIClient("https://central.example", "kor_key", "org/repo", client=http)
+            result = await client.submit_domain_research(
+                domain="forex",
+                evidence=[{"source_id": "src-1", "text": "market evidence"}],
+                idempotency_key="fx-brief-1",
+                target_language="Persian",
+            )
+            assert result["job_id"] == "domain-job"
+            import json
+            assert seen[0].url.path == "/api/integrations/forex/research"
+            body = json.loads(seen[0].read())
+            assert body["repository"] == "org/repo"
+            assert body["evidence"][0]["source_id"] == "src-1"
+            assert body["target_language"] == "Persian"
+            await client.close()
+
+    asyncio.run(run())
+
+
+def test_sdk_domain_research_rejects_unlisted_domain_and_unbounded_evidence():
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda request: httpx.Response(202, json={})
+        )) as http:
+            client = CentralAIClient("https://central.example", "kor_key", "org/repo", client=http)
+            for kwargs in (
+                {"domain": "unknown", "evidence": [{"source_id": "s", "text": "x"}], "idempotency_key": "id"},
+                {"domain": "nft", "evidence": [], "idempotency_key": "id"},
+            ):
+                try:
+                    await client.submit_domain_research(**kwargs)
+                except ValueError:
+                    pass
+                else:
+                    raise AssertionError("invalid domain workflow request must be rejected")
+            await client.close()
+
+    asyncio.run(run())
