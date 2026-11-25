@@ -174,3 +174,10 @@ The central service now exposes fixed, bounded research workflows for Forex, You
 The model router records secret-free provider latency, success and HTTP 429 telemetry and uses it with task-fit preference when ranking eligible models. The strict USD 0.00 eligibility guard remains first; telemetry cannot make a paid or unknown-price model eligible. Admins can inspect aggregates at `GET /api/models/performance`. A model quality score is used only when explicitly backed by verified benchmark evidence; otherwise quality is reported as not measured.
 
 See [Unified Agent and Domain Routing](docs/UNIFIED_AGENT_DOMAIN_ROUTING.md) for endpoint payloads, SDK examples, security boundaries and downstream activation steps. The central API and SDKs are executable, but each remote repository still requires its own tenant secret/configuration and an authenticated end-to-end verification before it can be called connected.
+
+
+## Future repository onboarding without central code changes
+
+A new repository can use the generic registered connector contract rather than requiring a new hard-coded adapter. An administrator approves the exact repository, issues a tenant key scoped to that repository, and registers a versioned connector manifest with the capability `research.workflow.v1` and domain `general`. The repository then calls `submit_integration_research` (Python) or `submitIntegrationResearch` (Node) through the same encrypted durable queue and fixed research/classification/synthesis workflow. The generic integration is discoverable from `GET /api/integrations`.
+
+This no-code path supports evidence-based research and optional translation. It does not execute downloaded plugin code, arbitrary remote endpoints, trading, publishing, wallet operations, or other privileged actions. New specialized behavior still requires reviewed central code. See the onboarding section in [docs/UNIFIED_AGENT_DOMAIN_ROUTING.md](docs/UNIFIED_AGENT_DOMAIN_ROUTING.md).
