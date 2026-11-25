@@ -85,6 +85,7 @@ async def agent_execute_job(job: dict) -> dict[str, Any]:
             "youtube": "Do not label a topic trending unless supplied evidence establishes recency, volume, and trend direction.",
             "ptc": "Treat payout, ownership, and legitimacy claims as unverified unless supplied evidence directly supports them; flag missing proof.",
             "nft": "Do not invent floor prices, sales, rarity, liquidity, or valuation comparables; state when market evidence is absent.",
+            "general": "Use only the supplied evidence, avoid domain-specific assumptions, distinguish facts from inference, and identify missing verification.",
         }
         evidence_text = "\n\n".join(
             (
