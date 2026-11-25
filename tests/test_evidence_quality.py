@@ -67,3 +67,29 @@ def test_evidence_pack_rejects_duplicate_source_ids_case_insensitively():
             {"source_id": "Report-A", "text": "First"},
             {"source_id": "report-a", "text": "Second"},
         ])
+
+
+@pytest.mark.parametrize("url", [
+    "http://example.com/source",
+    "https://user:pass@example.com/source",
+    "https://127.0.0.1/private",
+    "https://localhost/private",
+    "https://service.internal/source",
+    "https://example.com:9443/source",
+    "https://example.com/source#fragment",
+    "https://-bad.example/source",
+])
+def test_evidence_rejects_non_public_or_unsafe_source_urls(url):
+    with pytest.raises(EvidenceMetadataError):
+        assess_evidence_item({"source_id": "unsafe", "text": "evidence", "source_url": url})
+
+
+def test_evidence_accepts_public_https_with_default_port():
+    result = assess_evidence_item({
+        "source_id": "official",
+        "text": "pricing evidence",
+        "source_url": "https://vendor.example/pricing?plan=free",
+    })
+    assert result["source_id"] == "official"
+    assert result["credibility"] == "unverified"
+

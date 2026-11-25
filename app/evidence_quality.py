@@ -5,6 +5,8 @@ This module never fetches URLs or treats publisher metadata as proof of truth.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
+import re
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlsplit
@@ -55,14 +57,37 @@ def assess_evidence_item(item: dict[str, Any], *, now: datetime | None = None) -
     if source_url is not None:
         if not isinstance(source_url, str) or len(source_url) > MAX_SOURCE_URL_CHARS:
             raise EvidenceMetadataError("source_url must be HTTPS and at most 2048 characters")
-        parsed_url = urlsplit(source_url)
+        try:
+            parsed_url = urlsplit(source_url)
+            host = (parsed_url.hostname or "").encode("idna").decode("ascii").lower().rstrip(".")
+            port = parsed_url.port
+        except (ValueError, UnicodeError) as exc:
+            raise EvidenceMetadataError("source_url is malformed") from exc
         if (
             parsed_url.scheme.lower() != "https"
-            or not parsed_url.hostname
+            or not host
             or parsed_url.username is not None
             or parsed_url.password is not None
+            or port not in (None, 443)
+            or parsed_url.fragment
         ):
-            raise EvidenceMetadataError("source_url must be an HTTPS URL without embedded credentials")
+            raise EvidenceMetadataError("source_url must be public HTTPS without credentials, non-standard ports, or fragments")
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            labels = host.split(".")
+            if (
+                len(labels) < 2
+                or host.endswith((".local", ".internal", ".localhost", ".test"))
+                or any(
+                    not label or len(label) > 63
+                    or not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", label)
+                    for label in labels
+                )
+            ):
+                raise EvidenceMetadataError("source_url hostname must be a public DNS hostname")
+        else:
+            raise EvidenceMetadataError("source_url must not use an IP literal")
 
     observed_at = item.get("observed_at")
     age_bucket = "unknown"
