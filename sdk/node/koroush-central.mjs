@@ -30,7 +30,7 @@ export class CentralAIClient {
       throw new TypeError("A valid tenant API key is required");
     }
     const repo = String(repository || "").trim().toLowerCase();
-    if (!/^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?\/[a-z0-9](?:[a-z0-9._-]{0,98}[a-z0-9])?$/.test(repo) || repo.endsWith(".git")) {
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?\/[a-z0-9][a-z0-9._-]{0,99}$/.test(repo) || repo.endsWith(".git")) {
       throw new TypeError("repository must use valid owner/repository format");
     }
     if (typeof fetchImpl !== "function") throw new TypeError("A fetch implementation is required");
