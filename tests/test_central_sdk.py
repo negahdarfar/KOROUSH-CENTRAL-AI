@@ -194,3 +194,46 @@ def test_sdk_domain_research_rejects_unlisted_domain_and_unbounded_evidence():
             await client.close()
 
     asyncio.run(run())
+
+
+def test_python_sdk_calls_a_future_registered_integration_without_domain_specific_method():
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(202, json={"job_id": "future-job", "status": "queued"})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = CentralAIClient("https://central.example", "kor_key", "org/future-project", client=http)
+            result = await client.submit_integration_research(
+                integration_id="acme.future-project",
+                evidence=[{"source_id": "s1", "text": "future source"}],
+                idempotency_key="future-brief-1",
+            )
+            assert result["job_id"] == "future-job"
+            assert seen[0].url.path == "/api/integrations/acme.future-project/research"
+            await client.close()
+
+    asyncio.run(run())
+
+
+def test_python_sdk_rejects_invalid_dynamic_integration_identifier():
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda request: httpx.Response(202, json={})
+        )) as http:
+            client = CentralAIClient("https://central.example", "kor_key", "org/future-project", client=http)
+            try:
+                await client.submit_integration_research(
+                    integration_id="../unsafe",
+                    evidence=[{"source_id": "s1", "text": "future source"}],
+                    idempotency_key="future-brief-2",
+                )
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("invalid extension identifiers must be rejected")
+            await client.close()
+
+    asyncio.run(run())
