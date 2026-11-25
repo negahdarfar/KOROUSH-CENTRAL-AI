@@ -1,0 +1,139 @@
+"""Fixed, bounded multi-agent workflows for the four downstream domains.
+
+The graph is code-defined (not tenant-defined), sequential, and cost bounded.
+Every step reuses the existing agent contract, quota guard and free-model policy.
+"""
+from __future__ import annotations
+
+from typing import Any, Awaitable, Callable
+
+from .agent_contracts import AgentContractError, validate_agent_input
+
+DOMAIN_LABELS = {
+    "forex": ["high-risk", "watchlist", "macro-sensitive", "insufficient-evidence"],
+    "youtube": ["emerging-topic", "evergreen", "copyright-risk", "insufficient-trend-evidence"],
+    "ptc": ["potentially-legitimate", "high-risk", "unverified", "insufficient-evidence"],
+    "nft": ["metadata-incomplete", "market-evidence-needed", "risk-flagged", "potentially-notable"],
+}
+MAX_WORKFLOW_STEPS = 4
+
+
+class AgentWorkflowInputError(ValueError):
+    """Invalid domain workflow request."""
+
+
+def validate_domain_workflow_input(payload: Any) -> dict:
+    if not isinstance(payload, dict):
+        raise AgentWorkflowInputError("workflow payload must be an object")
+    if set(payload) - {"domain", "evidence", "target_language"}:
+        raise AgentWorkflowInputError("workflow payload contains unsupported fields")
+    domain = payload.get("domain")
+    if not isinstance(domain, str) or domain not in DOMAIN_LABELS:
+        raise AgentWorkflowInputError("domain must be forex, youtube, ptc or nft")
+    try:
+        _, normalized = validate_agent_input({
+            "agent_id": "koroush.research-brief",
+            "schema_version": 1,
+            "domain": domain,
+            "evidence": payload.get("evidence"),
+        })
+    except AgentContractError as exc:
+        raise AgentWorkflowInputError(str(exc)) from exc
+    target = payload.get("target_language")
+    if target is not None and (
+        not isinstance(target, str) or not target.strip() or len(target.strip()) > 80
+    ):
+        raise AgentWorkflowInputError("target_language must be non-empty text up to 80 characters")
+    normalized["target_language"] = target.strip() if isinstance(target, str) else None
+    return normalized
+
+
+def _content(result: dict, step: str) -> str:
+    try:
+        choices = result["output"]["choices"]
+        content = choices[0]["message"]["content"]
+    except (KeyError, IndexError, TypeError):
+        raise RuntimeError(f"{step} returned an invalid completion envelope")
+    if not isinstance(content, str) or not content.strip() or len(content) > 12_000:
+        raise RuntimeError(f"{step} returned empty or oversized text")
+    return content.strip()
+
+
+async def execute_domain_workflow(
+    job: dict,
+    agent_handler: Callable[[dict], Awaitable[dict]],
+) -> dict:
+    """Run research → classification → synthesis → optional translation."""
+    payload = validate_domain_workflow_input(job.get("payload"))
+    domain = payload["domain"]
+    base = {key: value for key, value in job.items() if key != "payload"}
+    steps: list[dict] = []
+
+    research = await agent_handler({
+        **base,
+        "payload": {
+            "agent_id": "koroush.research-brief",
+            "schema_version": 1,
+            "domain": domain,
+            "evidence": payload["evidence"],
+        },
+    })
+    research_text = _content(research, "research")
+    steps.append({"agent_id": "koroush.research-brief", "status": "succeeded"})
+
+    classification = await agent_handler({
+        **base,
+        "payload": {
+            "agent_id": "koroush.text-classifier",
+            "schema_version": 1,
+            "text": research_text,
+            "labels": DOMAIN_LABELS[domain],
+        },
+    })
+    classification_text = _content(classification, "classification")
+    steps.append({"agent_id": "koroush.text-classifier", "status": "succeeded"})
+
+    synthesis = await agent_handler({
+        **base,
+        "payload": {
+            "agent_id": "koroush.text-summarizer",
+            "schema_version": 1,
+            "text": (
+                f"DOMAIN: {domain}\nRESEARCH BRIEF:\n{research_text}"
+                f"\n\nCLASSIFICATION:\n{classification_text}"
+            )[:12_000],
+        },
+    })
+    final_text = _content(synthesis, "synthesis")
+    steps.append({"agent_id": "koroush.text-summarizer", "status": "succeeded"})
+
+    if payload["target_language"]:
+        translated = await agent_handler({
+            **base,
+            "payload": {
+                "agent_id": "koroush.text-translator",
+                "schema_version": 1,
+                "text": final_text,
+                "target_language": payload["target_language"],
+            },
+        })
+        final_text = _content(translated, "translation")
+        steps.append({"agent_id": "koroush.text-translator", "status": "succeeded"})
+
+    if len(steps) > MAX_WORKFLOW_STEPS:
+        raise RuntimeError("workflow exceeded its fixed execution bound")
+    return {
+        "workflow_id": f"koroush.{domain}.research.v1",
+        "domain": domain,
+        "status": "succeeded",
+        "steps": steps,
+        "step_count": len(steps),
+        "source_ids": [item["source_id"] for item in payload["evidence"]],
+        "classification": classification_text,
+        "report": final_text,
+        "limitations": [
+            "Evidence is supplied by the caller; the workflow does not independently browse.",
+            "Classification is model output, not a verified probability or financial recommendation.",
+            "No publishing, trading, clicking, wallet signing or payout action is performed.",
+        ],
+    }
