@@ -165,3 +165,12 @@ This service is the shared control plane for connected repositories. See [docs/C
 ## Live resource discovery
 
 The admin-only `POST /api/admin/discovery/search` endpoint searches public GitHub repository metadata with bounded terms, recency, result counts, timeouts, and response size. It returns ranked candidates and evidence gaps; it does not install, execute, or register external code. All pricing remains unverified until an administrator validates the official publisher and terms. See [docs/INTELLIGENT_DISCOVERY_ENGINE_V1_1.md](docs/INTELLIGENT_DISCOVERY_ENGINE_V1_1.md).
+
+
+## Unified multi-agent workflows and four domain adapters
+
+The central service now exposes fixed, bounded research workflows for Forex, YouTube, PTC and NFT through `POST /api/integrations/{domain}/research`. Each workflow runs evidence-grounded research, domain classification and synthesis through the encrypted durable queue, with optional translation. Python and Node SDKs provide `submit_domain_research` / `submitDomainResearch`. These are research/drafting integrations only: trading, public publishing, automated clicking, wallet signing and payouts remain disabled.
+
+The model router records secret-free provider latency, success and HTTP 429 telemetry and uses it with task-fit preference when ranking eligible models. The strict USD 0.00 eligibility guard remains first; telemetry cannot make a paid or unknown-price model eligible. Admins can inspect aggregates at `GET /api/models/performance`. A model quality score is used only when explicitly backed by verified benchmark evidence; otherwise quality is reported as not measured.
+
+See [Unified Agent and Domain Routing](docs/UNIFIED_AGENT_DOMAIN_ROUTING.md) for endpoint payloads, SDK examples, security boundaries and downstream activation steps. The central API and SDKs are executable, but each remote repository still requires its own tenant secret/configuration and an authenticated end-to-end verification before it can be called connected.
