@@ -172,6 +172,9 @@ _PROVIDER_CATALOG = (
 )
 
 _API_CATALOG = (
+    {"id":"repositories.reconcile","method":"POST","path":"/api/admin/repositories/reconcile","auth":"admin","status":"limited"},
+    {"id":"repositories.catalog","method":"GET","path":"/api/admin/repositories/catalog","auth":"admin","status":"limited"},
+    {"id":"repositories.sync","method":"GET","path":"/api/repositories/sync","auth":"tenant:registry:read","status":"limited"},
     {"id":"mcp.servers.register","method":"POST","path":"/api/admin/mcp/servers","auth":"admin","status":"limited"},
     {"id":"mcp.discovery","method":"POST","path":"/api/admin/mcp/discover","auth":"admin","status":"limited"},
     {"id":"mcp.servers.list","method":"GET","path":"/api/mcp/servers","auth":"tenant:registry:read","status":"limited"},
