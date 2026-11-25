@@ -68,11 +68,21 @@ def test_observed_runtime_metrics_improve_ranking_within_the_same_cost_class():
 def test_model_quality_is_only_used_with_explicit_verified_benchmark_evidence():
     from app.model_router import rank_avalai_models
     catalog = [
-        {"id": "model-a", "mode": "chat", "pricing": {"input": 0}, "quality_score": 99},
-        {"id": "model-b", "mode": "chat", "pricing": {"input": 0}, "quality_score": 50,
+        {"id": "model-a", "mode": "chat", "pricing": {"input": 0, "output": 0}, "quality_score": 99},
+        {"id": "model-b", "mode": "chat", "pricing": {"input": 0, "output": 0}, "quality_score": 50,
          "quality_evidence": "verified_benchmark"},
     ]
     ranked = rank_avalai_models(catalog, free_only=True)
     by_id = {item["id"]: item["routing"] for item in ranked}
     assert by_id["model-a"]["quality_score"] is None
     assert by_id["model-b"]["quality_score"] == 50.0
+
+@pytest.mark.parametrize("pricing", [
+    {"input": 0}, {"output": 0}, {"input": 0, "output": None},
+    {"input": False, "output": 0}, {"prompt": "NaN", "completion": 0},
+    {"input": 0, "output": 0, "request": 0.001},
+    {"input": 0, "output": 0, "extra": "unknown"},
+])
+def test_incomplete_or_nonzero_pricing_is_never_eligible(pricing):
+    from app.model_router import rank_avalai_models
+    assert rank_avalai_models([{"id": "candidate", "mode": "chat", "pricing": pricing}], free_only=True) == []
