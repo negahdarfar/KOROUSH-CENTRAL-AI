@@ -126,3 +126,30 @@ def test_future_repository_connector_can_register_generic_research_capability(tm
     assert visible[0]["capabilities"] == ["research.workflow.v1"]
     assert visible[0]["execution"] == "external-contract-only"
     assert visible[0]["trust"] == "unverified"
+
+
+def test_admin_can_register_versioned_forex_data_source_for_tenant_discovery(tmp_path, monkeypatch):
+    from app import extension_registry
+    monkeypatch.setattr(extension_registry, "_db_path", lambda: tmp_path / "data-sources.sqlite3")
+    item = register_extension(manifest(
+        extension_id="provider.fx-public-feed",
+        version="1.0.0",
+        kind="data_source",
+        name="Public FX OHLC Feed",
+        protocol="koroush-market-data-v1",
+        endpoint="https://prices.example.org/v1/ohlc",
+        capabilities=["market.ohlc.v1"],
+        domains=["forex"],
+        repositories=["negahdarfar/daily-forex-analyze-"],
+        pricing={"cost_usd": 0, "zero_cost_attested_by_admin": True,
+                 "terms_url": "https://prices.example.org/terms"},
+    ))
+    visible = list_extensions(
+        repository="negahdarfar/daily-forex-analyze-", kind="data_source"
+    )
+    assert item["kind"] == "data_source"
+    assert item["protocol"] == "koroush-market-data-v1"
+    assert len(visible) == 1
+    assert visible[0]["capabilities"] == ["market.ohlc.v1"]
+    assert visible[0]["pricing_status"] == "unverified"
+    assert visible[0]["trust"] == "unverified"
