@@ -22,6 +22,7 @@ from .alert_notifier import dispatch_usage_alerts, run_alert_worker
 from .operational_alerts import run_operational_alert_worker
 from .operational_health import router as operational_health_router
 from .job_routes import router as job_router
+from .integration_routes import router as integration_router
 from .evidence_routes import router as evidence_router
 from .extension_routes import router as extension_router
 from .event_routes import router as event_router
@@ -61,6 +62,7 @@ app = FastAPI(
 app.include_router(tenant_auth_router)
 app.include_router(operational_health_router)
 app.include_router(job_router)
+app.include_router(integration_router)
 app.include_router(evidence_router)
 app.include_router(extension_router)
 app.include_router(event_router)
