@@ -234,6 +234,22 @@ def claim_job(worker_id: str, *, lease_seconds: int = 60) -> dict | None:
         conn.close()
 
 
+def renew_job_lease(job_id: str, worker_id: str, attempt: int, *, lease_seconds: int = 60) -> bool:
+    """Renew only the current unexpired claim; attempt is a fencing generation."""
+    if type(attempt) is not int or attempt < 1 or type(lease_seconds) is not int or not 10 <= lease_seconds <= 3600:
+        raise JobQueueError("Invalid lease renewal")
+    conn = _connect()
+    try:
+        now = _now()
+        cursor = conn.execute("""UPDATE durable_jobs SET lease_until=?, updated_at=?
+            WHERE id=? AND status='running' AND lease_owner=? AND attempts=? AND lease_until>?""",
+            ((now + timedelta(seconds=lease_seconds)).isoformat(), now.isoformat(),
+             job_id, worker_id, attempt, now.isoformat()))
+        return cursor.rowcount == 1
+    finally:
+        conn.close()
+
+
 def finish_job(job_id: str, worker_id: str, *, result_ref: str | None = None) -> bool:
     if result_ref is not None:
         result_ref = _validate_text(result_ref, "result_ref", 512, r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,511}")
