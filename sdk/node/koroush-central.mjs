@@ -115,6 +115,35 @@ export class CentralAIClient {
     });
   }
 
+  submitDomainResearch({ domain, evidence, idempotencyKey, targetLanguage, maxAttempts = 3 }) {
+    if (!["forex", "youtube", "ptc", "nft"].includes(domain)) {
+      throw new TypeError("domain must be forex, youtube, ptc or nft");
+    }
+    if (!Array.isArray(evidence) || evidence.length < 1 || evidence.length > 8
+        || evidence.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
+      throw new TypeError("evidence must contain 1 to 8 source objects");
+    }
+    if (typeof idempotencyKey !== "string" || !idempotencyKey || idempotencyKey.length > 128) {
+      throw new TypeError("A stable idempotencyKey of at most 128 characters is required");
+    }
+    if (targetLanguage !== undefined && (typeof targetLanguage !== "string"
+        || !targetLanguage.trim() || targetLanguage.length > 80)) {
+      throw new TypeError("targetLanguage must be non-empty text up to 80 characters");
+    }
+    if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 10) {
+      throw new TypeError("maxAttempts must be an integer from 1 to 10");
+    }
+    return this.request("POST", "/api/integrations/" + domain + "/research", {
+      body: {
+        repository: this.repository,
+        evidence,
+        idempotency_key: idempotencyKey,
+        target_language: targetLanguage,
+        max_attempts: maxAttempts,
+      },
+    });
+  }
+
   submitAgent({ agentId, payload, idempotencyKey, maxAttempts = 5 }) {
     if (typeof agentId !== "string" || !agentId || agentId.length > 128) {
       throw new TypeError("agentId must be non-empty text up to 128 characters");
