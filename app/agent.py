@@ -20,6 +20,14 @@ from .model_performance import get_model_metrics
 logger = logging.getLogger(__name__)
 
 
+def _safe_model_metrics() -> dict:
+    try:
+        return get_model_metrics("avalai")
+    except Exception:
+        logger.warning("Model telemetry unavailable; routing falls back to catalog policy", exc_info=True)
+        return {}
+
+
 def _record_chat_usage(repository: str, provider: str, model: str, data: dict, response: httpx.Response, surface: str) -> None:
     request_id = response.headers.get("x-request-id") or response.headers.get("avalai-request-id") or data.get("id")
     try:
@@ -41,7 +49,7 @@ async def _resolve_model(llm: dict, requested_model: str | None, *, task: str = 
     selected_task = policy.get("task") if policy.get("task") != "general" else task
     eligible = rank_avalai_models(
         catalog,
-        performance_metrics=get_model_metrics("avalai"),
+        performance_metrics=_safe_model_metrics(),
         task=selected_task,
         free_only=policy.get("free_only", False),
         allow_unknown_cost=policy.get("allow_unknown_cost", True),
@@ -81,6 +89,7 @@ async def _chat_completion_with_free_failover(
     selected_task = policy.get("task") if policy.get("task") != "general" else task
     eligible = rank_avalai_models(
         catalog,
+        performance_metrics=_safe_model_metrics(),
         task=selected_task,
         free_only=True,
         allow_unknown_cost=False,
