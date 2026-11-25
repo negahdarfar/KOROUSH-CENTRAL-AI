@@ -14,14 +14,16 @@ _INTEGRATION_PROFILES = (
     {
         "id": "koroush.forex",
         "name": "Forex and market research",
-        "status": "contract-only",
+        "status": "enabled-research",
         "contract_version": INTEGRATION_PROFILE_VERSION,
+        "api": "POST /api/integrations/DOMAIN/research",
+        "job_type": "agent.workflow",
         "shared_agents": ["koroush.text-summarizer", "koroush.text-classifier", "koroush.text-translator", "koroush.research-brief"],
         "required_scopes": ["jobs:enqueue", "jobs:read", "inference:chat"],
         "allowed_operations": ["research-summary", "scenario-classification", "market-news-translation"],
         "blocked_operations": ["live-order-execution", "broker-account-access", "credential-storage", "position-management"],
-        "execution": "not-enabled",
-        "notes": "Research and analysis contract only; no trading signal guarantee or broker connectivity.",
+        "execution": "durable-job",
+        "notes": "Executable evidence-grounded research workflow through the central durable queue; no trading signal guarantee or broker connectivity.",
     },
     {
         "id": "koroush.youtube",
@@ -33,7 +35,7 @@ _INTEGRATION_PROFILES = (
         "allowed_operations": ["topic-research-summary", "script-draft", "metadata-draft", "subtitle-translation"],
         "blocked_operations": ["public-video-publishing", "channel-settings-mutation", "oauth-token-exposure", "unlicensed-media-reuse"],
         "execution": "not-enabled",
-        "notes": "Drafting contract only; public publishing and channel actions remain disabled.",
+        "notes": "Executable topic research, classification, synthesis and optional translation; publishing and channel actions remain disabled.",
     },
     {
         "id": "koroush.ptc",
@@ -45,7 +47,7 @@ _INTEGRATION_PROFILES = (
         "allowed_operations": ["site-review-summary", "offer-risk-classification", "earnings-data-analysis"],
         "blocked_operations": ["automated-clicking", "account-login", "captcha-bypass", "payout-actions"],
         "execution": "not-enabled",
-        "notes": "Evidence-based research contract only; no automated earning activity or account actions.",
+        "notes": "Executable evidence-based offer and platform research; no automated earning activity or account actions.",
     },
     {
         "id": "koroush.nft",
@@ -57,7 +59,7 @@ _INTEGRATION_PROFILES = (
         "allowed_operations": ["collection-research-summary", "metadata-review", "valuation-report-draft"],
         "blocked_operations": ["wallet-signing", "onchain-transactions", "marketplace-listing", "custody-of-assets"],
         "execution": "not-enabled",
-        "notes": "Research and draft reports only; no wallet access, signing, or transactions.",
+        "notes": "Executable metadata and market-evidence research; no wallet access, signing, or transactions.",
     },
 )
 
