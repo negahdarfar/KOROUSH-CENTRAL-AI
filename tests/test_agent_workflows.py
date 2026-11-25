@@ -93,3 +93,21 @@ def test_normalized_provenance_payload_can_be_revalidated_by_durable_worker():
     second_pass = validate_domain_workflow_input(first_pass)
     assert second_pass["domain"] == "forex"
     assert second_pass["evidence"][0]["sha256"] == first_pass["evidence"][0]["sha256"]
+
+ 
+
+def test_generic_research_domain_runs_for_future_repository_types():
+    calls = []
+
+    async def fake_agent(job):
+        agent_id = job["payload"]["agent_id"]
+        calls.append(agent_id)
+        return {"output": {"choices": [{"message": {"content": "General evidence-based output."}}]}}
+
+    result = asyncio.run(execute_domain_workflow({
+        "repository": "org/future-project",
+        "payload": {"domain": "general", "evidence": _evidence()},
+    }, fake_agent))
+    assert result["domain"] == "general"
+    assert result["step_count"] == 3
+    assert result["report"] == "General evidence-based output."
