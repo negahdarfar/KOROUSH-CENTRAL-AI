@@ -30,6 +30,7 @@ from .job_admin_routes import router as job_admin_router
 from .worker_runtime import run_worker_loop, worker_enabled
 from .discovery_routes import router as discovery_router
 from .mcp_gateway import router as mcp_router
+from .repository_sync_routes import router as repository_sync_router, discovery_loop, enabled as discovery_enabled
 
 from contextlib import asynccontextmanager
 
@@ -40,10 +41,11 @@ async def lifespan(app: FastAPI):
     alert_task = asyncio.create_task(run_alert_worker())
     operational_alert_task = asyncio.create_task(run_operational_alert_worker())
     job_task = asyncio.create_task(run_worker_loop()) if worker_enabled() else None
+    discovery_task = asyncio.create_task(discovery_loop()) if discovery_enabled() else None
     try:
         yield
     finally:
-        tasks = [alert_task, operational_alert_task] + ([job_task] if job_task is not None else [])
+        tasks = [alert_task, operational_alert_task] + ([job_task] if job_task is not None else []) + ([discovery_task] if discovery_task is not None else [])
         for task in tasks:
             task.cancel()
         for task in tasks:
@@ -69,6 +71,7 @@ app.include_router(agent_hub_router)
 app.include_router(job_admin_router)
 app.include_router(discovery_router)
 app.include_router(mcp_router)
+app.include_router(repository_sync_router)
 
 
 
