@@ -235,3 +235,24 @@ The target design follows interoperable standards where they materially improve 
 5. **Scale and supply chain:** pin Actions to verified commit SHAs, publish build provenance, and migrate from SQLite only when multi-instance operation is actually needed.
 
 This sequence deliberately avoids premature microservices. The current modular central service is the simplest safe control plane for the present scale; stable contracts and adapters provide future portability without coupling every downstream repository to internal Python modules.
+
+
+## 10. Forex dynamic market-data discovery scope
+
+The Forex repository uses two separate central capabilities and must be provisioned for both when both are enabled:
+
+- Research workflow submission/result retrieval: `jobs:enqueue`, `jobs:read`, `inference:chat`.
+- Runtime discovery of admin-approved `kind=data_source` manifests through `GET /api/extensions?repository=owner/repository&kind=data_source`: additionally `registry:read`.
+
+For `negahdarfar/Daily-Forex-Analyze-`, the tenant key therefore needs all four scopes:
+
+```json
+{
+  "user_id": "daily-forex-analyze",
+  "team_id": "approved-team",
+  "repositories": ["negahdarfar/daily-forex-analyze-"],
+  "scopes": ["jobs:enqueue", "jobs:read", "inference:chat", "registry:read"]
+}
+```
+
+This is a provisioning example, not a claim that a key or data-source manifest has already been created. Existing keys are not upgraded automatically; create a replacement key with the additional scope, then store it only in the Forex repository's secret store. Never expose the raw key in source, logs, issues, or chat. The central extension registry supports `data_source` manifests using `koroush-market-data-v1` and `market.ohlc.v1`; actual feed activation still requires administrator review, a valid manifest, and an authenticated successful discovery/provider response.
