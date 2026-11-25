@@ -141,7 +141,7 @@ def test_admin_can_register_versioned_forex_data_source_for_tenant_discovery(tmp
         capabilities=["market.ohlc.v1"],
         domains=["forex"],
         repositories=["negahdarfar/daily-forex-analyze-"],
-        pricing={"cost_usd": 0, "zero_cost_attested_by_admin": True,
+        pricing={"cost_usd": 0, "zero_cost_attested_by_admin": True, "source_reviewed_by_admin": True,
                  "terms_url": "https://prices.example.org/terms"},
     ))
     visible = list_extensions(
