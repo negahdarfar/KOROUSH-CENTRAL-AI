@@ -80,6 +80,9 @@ class CentralAIClient:
         except httpx.HTTPError as exc:
             raise CentralAIError(f"Central API transport error: {type(exc).__name__}") from exc
 
+    async def sync_capabilities(self) -> dict:
+        return await self._request("GET", "/api/repositories/sync", params={"repository": self.repository})
+
     async def manifest(self) -> dict:
         return await self._request("GET", "/api/platform/manifest")
 
