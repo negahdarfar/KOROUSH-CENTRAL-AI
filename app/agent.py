@@ -11,7 +11,6 @@ from .avalai import list_avalai_models
 from .model_router import rank_avalai_models, select_avalai_model
 from .workflow_registry import resolve_workflow_policy
 from .usage_ledger import record_usage, normalize_usage
-from .quota_guard import reserve_inference, complete_reservation, cancel_reservation
 from .avalai_gateway import require_approved_repository
 from .provider_router import configured_chat_providers
 from .provider_dispatch import verified_candidates, dispatch_chat_completion
@@ -133,22 +132,11 @@ async def _chat_completion_with_free_failover(
         raise RuntimeError("Inference blocked: no configured provider/model pair has trusted exact zero-price evidence")
     candidates = candidates[:retry_limit]
 
-    reservation_id = reserve_inference(repository, payload)
-    try:
-        data, response, provider_name, model_id = await dispatch_chat_completion(
-            candidates, payload, timeout=timeout
-        )
-        prompt_tokens, completion_tokens, total_tokens = normalize_usage(data.get("usage"))
-        _record_chat_usage(repository, provider_name, model_id, data, response, "chat_completions")
-        try:
-            complete_reservation(reservation_id, total_tokens or prompt_tokens + completion_tokens)
-        except Exception:
-            logger.exception("Quota reservation finalization failed; reservation will expire conservatively")
-        reservation_id = None
-        return data, response, model_id
-    finally:
-        if reservation_id:
-            cancel_reservation(reservation_id)
+    data, response, provider_name, model_id = await dispatch_chat_completion(
+        candidates, payload, timeout=timeout, repository=repository
+    )
+    _record_chat_usage(repository, provider_name, model_id, data, response, "chat_completions")
+    return data, response, model_id
 
 
 
