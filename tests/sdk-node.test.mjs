@@ -162,3 +162,30 @@ test("submitDomainResearch targets a fixed domain workflow and validates bounds"
     domain: "nft", evidence: [], idempotencyKey: "id",
   }), /evidence/);
 });
+
+
+test("submitIntegrationResearch supports future registered connectors without SDK code changes", async () => {
+  let captured;
+  const client = new CentralAIClient({
+    baseUrl: "https://central.example",
+    tenantKey: "kor_test",
+    repository: "org/future-project",
+    fetchImpl: async (url, options) => {
+      captured = { url: String(url), body: JSON.parse(options.body) };
+      return new Response(JSON.stringify({ job_id: "future-job", status: "queued" }), { status: 202 });
+    },
+  });
+  const result = await client.submitIntegrationResearch({
+    integrationId: "acme.future-project",
+    evidence: [{ source_id: "s1", text: "future source" }],
+    idempotencyKey: "future-brief-1",
+  });
+  assert.equal(result.job_id, "future-job");
+  assert.equal(captured.url, "https://central.example/api/integrations/acme.future-project/research");
+  assert.equal(captured.body.repository, "org/future-project");
+  assert.throws(() => client.submitIntegrationResearch({
+    integrationId: "../unsafe",
+    evidence: [{ source_id: "s1", text: "x" }],
+    idempotencyKey: "bad-id",
+  }), /integrationId/);
+});
