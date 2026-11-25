@@ -144,3 +144,96 @@ def test_sdk_submit_agent_binds_fixed_agent_id_and_job_type():
             await client.close()
 
     asyncio.run(run())
+
+
+
+def test_sdk_submits_domain_research_to_the_fixed_shared_workflow():
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(202, json={"job_id": "domain-job", "status": "queued"})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = CentralAIClient("https://central.example", "kor_key", "org/repo", client=http)
+            result = await client.submit_domain_research(
+                domain="forex",
+                evidence=[{"source_id": "src-1", "text": "market evidence"}],
+                idempotency_key="fx-brief-1",
+                target_language="Persian",
+            )
+            assert result["job_id"] == "domain-job"
+            import json
+            assert seen[0].url.path == "/api/integrations/forex/research"
+            body = json.loads(seen[0].read())
+            assert body["repository"] == "org/repo"
+            assert body["evidence"][0]["source_id"] == "src-1"
+            assert body["target_language"] == "Persian"
+            await client.close()
+
+    asyncio.run(run())
+
+
+def test_sdk_domain_research_rejects_unlisted_domain_and_unbounded_evidence():
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda request: httpx.Response(202, json={})
+        )) as http:
+            client = CentralAIClient("https://central.example", "kor_key", "org/repo", client=http)
+            for kwargs in (
+                {"domain": "unknown", "evidence": [{"source_id": "s", "text": "x"}], "idempotency_key": "id"},
+                {"domain": "nft", "evidence": [], "idempotency_key": "id"},
+            ):
+                try:
+                    await client.submit_domain_research(**kwargs)
+                except ValueError:
+                    pass
+                else:
+                    raise AssertionError("invalid domain workflow request must be rejected")
+            await client.close()
+
+    asyncio.run(run())
+
+
+def test_python_sdk_calls_a_future_registered_integration_without_domain_specific_method():
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(202, json={"job_id": "future-job", "status": "queued"})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = CentralAIClient("https://central.example", "kor_key", "org/future-project", client=http)
+            result = await client.submit_integration_research(
+                integration_id="acme.future-project",
+                evidence=[{"source_id": "s1", "text": "future source"}],
+                idempotency_key="future-brief-1",
+            )
+            assert result["job_id"] == "future-job"
+            assert seen[0].url.path == "/api/integrations/acme.future-project/research"
+            await client.close()
+
+    asyncio.run(run())
+
+
+def test_python_sdk_rejects_invalid_dynamic_integration_identifier():
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda request: httpx.Response(202, json={})
+        )) as http:
+            client = CentralAIClient("https://central.example", "kor_key", "org/future-project", client=http)
+            try:
+                await client.submit_integration_research(
+                    integration_id="../unsafe",
+                    evidence=[{"source_id": "s1", "text": "future source"}],
+                    idempotency_key="future-brief-2",
+                )
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("invalid extension identifiers must be rejected")
+            await client.close()
+
+    asyncio.run(run())

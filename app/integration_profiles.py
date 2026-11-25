@@ -1,7 +1,7 @@
-"""Static, non-executable integration profiles for downstream repositories.
+"""Executable research-only profiles for the four downstream repositories.
 
-Profiles document intended scopes and safety boundaries. They do not grant
-tenant permissions, connect external accounts, or enable domain actions.
+Each profile submits to the shared encrypted durable queue and fixed agent
+workflow. Account actions, trading, publishing and custody remain disabled.
 """
 from __future__ import annotations
 
@@ -14,56 +14,64 @@ _INTEGRATION_PROFILES = (
     {
         "id": "koroush.forex",
         "name": "Forex and market research",
-        "status": "contract-only",
+        "status": "enabled-research",
         "contract_version": INTEGRATION_PROFILE_VERSION,
-        "shared_agents": ["koroush.text-summarizer", "koroush.text-classifier", "koroush.text-translator", "koroush.research-brief"],
+        "api": "POST /api/integrations/forex/research",
+        "job_type": "agent.workflow",
+        "shared_agents": ["koroush.research-brief", "koroush.text-classifier", "koroush.text-summarizer", "koroush.text-translator"],
         "required_scopes": ["jobs:enqueue", "jobs:read", "inference:chat"],
         "allowed_operations": ["research-summary", "scenario-classification", "market-news-translation"],
         "blocked_operations": ["live-order-execution", "broker-account-access", "credential-storage", "position-management"],
-        "execution": "not-enabled",
-        "notes": "Research and analysis contract only; no trading signal guarantee or broker connectivity.",
+        "execution": "durable-job",
+        "notes": "Evidence-grounded analysis only; no executable trade instructions or broker connectivity.",
     },
     {
         "id": "koroush.youtube",
         "name": "YouTube content workflow",
-        "status": "contract-only",
+        "status": "enabled-research",
         "contract_version": INTEGRATION_PROFILE_VERSION,
-        "shared_agents": ["koroush.text-summarizer", "koroush.text-translator", "koroush.text-classifier", "koroush.research-brief"],
+        "api": "POST /api/integrations/youtube/research",
+        "job_type": "agent.workflow",
+        "shared_agents": ["koroush.research-brief", "koroush.text-classifier", "koroush.text-summarizer", "koroush.text-translator"],
         "required_scopes": ["jobs:enqueue", "jobs:read", "inference:chat"],
         "allowed_operations": ["topic-research-summary", "script-draft", "metadata-draft", "subtitle-translation"],
         "blocked_operations": ["public-video-publishing", "channel-settings-mutation", "oauth-token-exposure", "unlicensed-media-reuse"],
-        "execution": "not-enabled",
-        "notes": "Drafting contract only; public publishing and channel actions remain disabled.",
+        "execution": "durable-job",
+        "notes": "Topic research, classification, synthesis and optional translation; publishing and channel actions remain disabled.",
     },
     {
         "id": "koroush.ptc",
         "name": "PTC platform research",
-        "status": "contract-only",
+        "status": "enabled-research",
         "contract_version": INTEGRATION_PROFILE_VERSION,
-        "shared_agents": ["koroush.text-summarizer", "koroush.text-classifier", "koroush.research-brief"],
+        "api": "POST /api/integrations/ptc/research",
+        "job_type": "agent.workflow",
+        "shared_agents": ["koroush.research-brief", "koroush.text-classifier", "koroush.text-summarizer"],
         "required_scopes": ["jobs:enqueue", "jobs:read", "inference:chat"],
         "allowed_operations": ["site-review-summary", "offer-risk-classification", "earnings-data-analysis"],
         "blocked_operations": ["automated-clicking", "account-login", "captcha-bypass", "payout-actions"],
-        "execution": "not-enabled",
-        "notes": "Evidence-based research contract only; no automated earning activity or account actions.",
+        "execution": "durable-job",
+        "notes": "Evidence-based platform and offer research; no automated earning activity or account actions.",
     },
     {
         "id": "koroush.nft",
         "name": "NFT research and valuation",
-        "status": "contract-only",
+        "status": "enabled-research",
         "contract_version": INTEGRATION_PROFILE_VERSION,
-        "shared_agents": ["koroush.text-summarizer", "koroush.text-classifier", "koroush.research-brief"],
+        "api": "POST /api/integrations/nft/research",
+        "job_type": "agent.workflow",
+        "shared_agents": ["koroush.research-brief", "koroush.text-classifier", "koroush.text-summarizer"],
         "required_scopes": ["jobs:enqueue", "jobs:read", "inference:chat"],
         "allowed_operations": ["collection-research-summary", "metadata-review", "valuation-report-draft"],
         "blocked_operations": ["wallet-signing", "onchain-transactions", "marketplace-listing", "custody-of-assets"],
-        "execution": "not-enabled",
-        "notes": "Research and draft reports only; no wallet access, signing, or transactions.",
+        "execution": "durable-job",
+        "notes": "Metadata and market-evidence research; no wallet access, signing, or transactions.",
     },
 )
 
 
 def list_integration_profiles() -> list[dict]:
-    """Return defensive copies of non-executable integration contracts."""
+    """Return defensive copies; callers cannot mutate the process registry."""
     return [deepcopy(profile) for profile in _INTEGRATION_PROFILES]
 
 

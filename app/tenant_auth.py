@@ -217,7 +217,7 @@ def authorize_job_execution(
         scopes = set(json.loads(row["scopes_json"]))
         if repo not in json.loads(row["repositories_json"]) or "jobs:enqueue" not in scopes:
             return False
-        if job_type in {"chat.completion", "agent.execute"} and "inference:chat" not in scopes:
+        if job_type in {"chat.completion", "agent.execute", "agent.workflow"} and "inference:chat" not in scopes:
             return False
         return True
     finally:

@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import httpx
+import time
+
+from .model_performance import record_model_attempt
 
 
 RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504}
@@ -48,6 +51,7 @@ async def dispatch_chat_completion(candidates: list[dict], payload: dict, *,
             provider = config["provider"]
             model = config["model"]
             url = config["base_url"].rstrip("/") + "/chat/completions"
+            started = time.perf_counter()
             try:
                 response = await client.post(
                     url,
@@ -55,15 +59,37 @@ async def dispatch_chat_completion(candidates: list[dict], payload: dict, *,
                     json={**payload, "model": model},
                 )
             except (httpx.TimeoutException, httpx.NetworkError):
+                try:
+                    record_model_attempt(provider, model, latency_ms=(time.perf_counter() - started) * 1000, success=False)
+                except Exception:
+                    pass
                 last_failure = f"{provider}: network or timeout error"
                 continue
+            latency_ms = (time.perf_counter() - started) * 1000
             if response.status_code in RETRYABLE_STATUS_CODES:
+                try:
+                    record_model_attempt(provider, model, latency_ms=latency_ms, success=False, status_code=response.status_code)
+                except Exception:
+                    pass
                 last_failure = f"{provider}: retryable HTTP {response.status_code}"
                 continue
+            if response.status_code >= 400:
+                try:
+                    record_model_attempt(provider, model, latency_ms=latency_ms, success=False, status_code=response.status_code)
+                except Exception:
+                    pass
             response.raise_for_status()
             data = response.json()
             if not isinstance(data, dict) or not isinstance(data.get("choices"), list):
+                try:
+                    record_model_attempt(provider, model, latency_ms=latency_ms, success=False, status_code=response.status_code)
+                except Exception:
+                    pass
                 raise RuntimeError(f"{provider} returned an invalid chat-completion response")
+            try:
+                record_model_attempt(provider, model, latency_ms=latency_ms, success=True, status_code=response.status_code)
+            except Exception:
+                pass
             return data, response, provider, model
     raise RuntimeError(
         f"All verified free provider attempts failed ({len(candidates)} attempted; "

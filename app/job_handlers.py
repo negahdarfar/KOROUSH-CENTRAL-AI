@@ -6,6 +6,7 @@ from typing import Any
 from .agent import _chat_completion_with_free_failover
 from .config import settings
 from .agent_contracts import AgentContractError, validate_agent_input, validate_agent_output
+from .agent_workflows import execute_domain_workflow
 
 
 class JobInputError(ValueError):
@@ -84,6 +85,7 @@ async def agent_execute_job(job: dict) -> dict[str, Any]:
             "youtube": "Do not label a topic trending unless supplied evidence establishes recency, volume, and trend direction.",
             "ptc": "Treat payout, ownership, and legitimacy claims as unverified unless supplied evidence directly supports them; flag missing proof.",
             "nft": "Do not invent floor prices, sales, rarity, liquidity, or valuation comparables; state when market evidence is absent.",
+            "general": "Use only the supplied evidence, avoid domain-specific assumptions, distinguish facts from inference, and identify missing verification.",
         }
         evidence_text = "\n\n".join(
             (
@@ -178,9 +180,15 @@ async def agent_execute_job(job: dict) -> dict[str, Any]:
 
 
 
+async def agent_workflow_job(job: dict) -> dict[str, Any]:
+    """Run a fixed domain graph through bounded specialist agents."""
+    return await execute_domain_workflow(job, agent_execute_job)
+
+
 def default_job_handlers() -> dict[str, Any]:
-    """Return only the explicitly registered durable job handlers."""
+    """Return only explicitly registered, bounded durable job handlers."""
     return {
         "chat.completion": chat_completion_job,
         "agent.execute": agent_execute_job,
+        "agent.workflow": agent_workflow_job,
     }

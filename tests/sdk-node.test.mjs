@@ -132,3 +132,60 @@ test('event SDK sends scoped event contracts without local execution', async () 
   assert.ok(requests[2].url.endsWith('/api/events/event-1/settle'));
   assert.throws(() => client.claimEvent({ consumer: 'x', workerId: 'w', leaseSeconds: 2 }), /leaseSeconds/);
 });
+
+
+test("submitDomainResearch targets a fixed domain workflow and validates bounds", async () => {
+  let captured;
+  const client = new CentralAIClient({
+    baseUrl: "https://central.example",
+    tenantKey: "kor_test",
+    repository: "org/repo",
+    fetchImpl: async (url, options) => {
+      captured = { url: String(url), body: JSON.parse(options.body) };
+      return new Response(JSON.stringify({ job_id: "domain-1", status: "queued" }), { status: 202 });
+    },
+  });
+  const result = await client.submitDomainResearch({
+    domain: "youtube",
+    evidence: [{ source_id: "source-1", text: "topic evidence" }],
+    idempotencyKey: "topic-1",
+    targetLanguage: "Persian",
+  });
+  assert.equal(result.job_id, "domain-1");
+  assert.equal(captured.url, "https://central.example/api/integrations/youtube/research");
+  assert.equal(captured.body.repository, "org/repo");
+  assert.equal(captured.body.target_language, "Persian");
+  assert.throws(() => client.submitDomainResearch({
+    domain: "unknown", evidence: [{ source_id: "x" }], idempotencyKey: "id",
+  }), /domain/);
+  assert.throws(() => client.submitDomainResearch({
+    domain: "nft", evidence: [], idempotencyKey: "id",
+  }), /evidence/);
+});
+
+
+test("submitIntegrationResearch supports future registered connectors without SDK code changes", async () => {
+  let captured;
+  const client = new CentralAIClient({
+    baseUrl: "https://central.example",
+    tenantKey: "kor_test",
+    repository: "org/future-project",
+    fetchImpl: async (url, options) => {
+      captured = { url: String(url), body: JSON.parse(options.body) };
+      return new Response(JSON.stringify({ job_id: "future-job", status: "queued" }), { status: 202 });
+    },
+  });
+  const result = await client.submitIntegrationResearch({
+    integrationId: "acme.future-project",
+    evidence: [{ source_id: "s1", text: "future source" }],
+    idempotencyKey: "future-brief-1",
+  });
+  assert.equal(result.job_id, "future-job");
+  assert.equal(captured.url, "https://central.example/api/integrations/acme.future-project/research");
+  assert.equal(captured.body.repository, "org/future-project");
+  assert.throws(() => client.submitIntegrationResearch({
+    integrationId: "../unsafe",
+    evidence: [{ source_id: "s1", text: "x" }],
+    idempotencyKey: "bad-id",
+  }), /integrationId/);
+});
