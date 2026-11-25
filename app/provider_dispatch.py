@@ -5,7 +5,8 @@ import httpx
 import time
 
 from .model_performance import record_model_attempt
-from .quota_guard import reserve_inference, complete_reservation
+from .quota_guard import reserve_inference, complete_reservation, reconcile_attempt_tokens
+from .usage_ledger import normalize_usage
 
 
 RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504}
@@ -91,6 +92,9 @@ async def dispatch_chat_completion(candidates: list[dict], payload: dict, *,
                 except Exception:
                     pass
                 raise RuntimeError(f"{provider} returned an invalid chat-completion response")
+            if reservation is not None:
+                prompt, completion, total = normalize_usage(data.get("usage"))
+                reconcile_attempt_tokens(reservation, total or prompt + completion)
             try:
                 record_model_attempt(provider, model, latency_ms=latency_ms, success=True, status_code=response.status_code)
             except Exception:
