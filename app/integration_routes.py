@@ -1,4 +1,4 @@
-"""Tenant-authenticated entry points for the four central domain workflows."""
+"""Tenant-authenticated entry points for built-in and registered research workflows."""
 from __future__ import annotations
 
 import hashlib
@@ -83,14 +83,21 @@ async def submit_domain_research(
             registered = list_extensions(repository=repository, kind="connector")
         except Exception as exc:
             raise HTTPException(status_code=503, detail="Integration registry is unavailable") from exc
-        extension = next((
+        candidates = [
             item for item in registered
             if item.get("extension_id") == domain
             and item.get("status") == "active"
             and "general" in item.get("domains", [])
             and "research.workflow.v1" in item.get("capabilities", [])
             and repository in [str(value).lower() for value in item.get("repositories", [])]
-        ), None)
+        ]
+        # A connector may publish immutable semantic versions. Always route to
+        # the newest registered version rather than whichever row sorts first.
+        extension = max(
+            candidates,
+            key=lambda item: tuple(int(part) for part in item["version"].split(".")),
+            default=None,
+        )
         if not extension:
             raise HTTPException(status_code=404, detail="Registered research integration not found")
         workflow_domain = "general"
