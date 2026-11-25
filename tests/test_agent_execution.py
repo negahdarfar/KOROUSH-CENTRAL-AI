@@ -7,7 +7,7 @@ import app.job_handlers as handlers
 
 def test_default_worker_registers_only_supported_job_handlers():
     registered = handlers.default_job_handlers()
-    assert set(registered) == {"chat.completion", "agent.execute"}
+    assert set(registered) == {"chat.completion", "agent.execute", "agent.workflow"}
 
 
 def test_text_summarizer_builds_bounded_guarded_chat_request(monkeypatch):
