@@ -209,3 +209,29 @@ The current research workflow is one durable job containing three sequential mod
 - Use capability negotiation, not repository-name conditionals, for future integrations.
 - Keep provider/source adapters behind central policy checks; no connector may bypass the zero-cost, tenant, quota, or safety gates.
 - Treat integration health as **unverified** until contract tests and a real tenant-authenticated round trip succeed.
+
+## 9. Standards alignment and production-readiness gaps
+
+The target design follows interoperable standards where they materially improve portability. The following are **not claimed as implemented** merely because the current APIs carry similar metadata:
+
+| Area | Current implementation | Target / remaining work |
+|---|---|---|
+| Identity and authorization | Repository-bound tenant keys, scopes, revocation, and per-request checks | Add a full OIDC/MFA identity provider only when interactive human access is required; preserve workload identity for repository automation |
+| Event interoperability | Custom versioned event envelope with producer/consumer, idempotency, correlation and causation | Add an additive CloudEvents 1.0 envelope (specversion, id, source, type, subject, time, dataschema) while retaining the existing event API during migration |
+| Distributed observability | Worker heartbeat, job/usage records, provider metrics, correlation and causation IDs | Add OpenTelemetry trace context and consistent semantic attributes across API, queue, worker, provider calls, and Python/Node SDKs |
+| Extension catalog governance | Immutable versioned manifests, exact repository allowlists, capability and schema metadata | Add required owner, lifecycle, documentation, support contact, source/license evidence, reviewer, and review-expiry metadata |
+| Build integrity | GitHub Actions CI and CodeQL workflows | Pin every third-party Action to a verified full commit SHA; generate and verify build provenance before claiming a hardened software supply chain |
+| Durable orchestration | SQLite queue with leases, retries, idempotent enqueue, and encrypted payload storage | Add encrypted per-stage checkpoints, workflow cancellation, bounded deadlines, and explicit resume semantics before expanding beyond research-only work |
+| Runtime scale | SQLite-backed single-service persistence and a bounded worker loop | Keep a single active writer/worker deployment for this mode; move queue, tenant registry, event state and checkpoint storage to a transactional shared database before horizontal multi-instance execution |
+| Source ingestion | Metadata-only connector/source catalog; evidence is submitted by repositories | Add reviewed, protocol-specific source adapters with DNS/IP/redirect/size/time limits and licensing evidence; never make arbitrary manifest URLs executable |
+| Integration proof | Unit/contract tests and SDK bridge definitions | Require one authenticated end-to-end job per repository and a recorded successful result before marking it connected |
+
+### Recommended implementation order
+
+1. **Release gate:** restore GitHub Actions runner execution; obtain passing Python tests, Node SDK tests, and CodeQL on the exact PR head. No merge based on an empty or unallocated runner.
+2. **Reliability:** add encrypted workflow-stage checkpoints and idempotent stage keys; test worker crash/reclaim between every pair of stages.
+3. **Interoperability:** introduce CloudEvents-compatible event envelopes and OpenTelemetry trace propagation as additive, versioned changes.
+4. **Governance:** make ownership, lifecycle, license evidence, pricing evidence, reviewer and expiry mandatory for production connector approval.
+5. **Scale and supply chain:** pin Actions to verified commit SHAs, publish build provenance, and migrate from SQLite only when multi-instance operation is actually needed.
+
+This sequence deliberately avoids premature microservices. The current modular central service is the simplest safe control plane for the present scale; stable contracts and adapters provide future portability without coupling every downstream repository to internal Python modules.
