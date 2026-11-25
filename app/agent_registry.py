@@ -151,6 +151,7 @@ _AGENTS = (
 )
 
 _CAPABILITIES = (
+    {"id":"mcp.gateway","status":"limited","transport":"streamable-http","job_type":None},
     {"id": "chat.completion", "status": "available", "transport": "json", "job_type": "chat.completion"},
     {"id": "agent.execute", "status": "limited", "transport": "durable-job", "job_type": "agent.execute", "agents": ["koroush.text-summarizer", "koroush.text-translator", "koroush.text-classifier", "koroush.research-brief"]},
     {"id": "github.repository.audit", "status": "available", "transport": "http", "job_type": None},
@@ -171,6 +172,10 @@ _PROVIDER_CATALOG = (
 )
 
 _API_CATALOG = (
+    {"id":"mcp.servers.register","method":"POST","path":"/api/admin/mcp/servers","auth":"admin","status":"limited"},
+    {"id":"mcp.discovery","method":"POST","path":"/api/admin/mcp/discover","auth":"admin","status":"limited"},
+    {"id":"mcp.servers.list","method":"GET","path":"/api/mcp/servers","auth":"tenant:registry:read","status":"limited"},
+    {"id":"mcp.health","method":"GET","path":"/api/mcp/health","auth":"tenant:registry:read","status":"limited"},
     {"id": "health.status", "method": "GET", "path": "/health", "auth": "public-health", "status": "available"},
     {"id": "runtime.version", "method": "GET", "path": "/api/version", "auth": "public-health", "status": "available"},
     {"id": "tenant.keys.create", "method": "POST", "path": "/api/admin/tenant-keys", "auth": "admin", "status": "available"},
@@ -243,6 +248,7 @@ def platform_manifest() -> dict:
         "platform": "KOROUSH-CENTRAL-AI",
         "platform_version": PLATFORM_VERSION,
         "integration_model": "central-control-plane",
+        "mcp": {"endpoint": "/mcp/{owner}/{repository}", "status": "opt-in", "remote_dispatch": "blocked", "transport": "stateless-json", "auth": "repository-bound bearer token"},
         "agents": list_agents(),
         "integrations": list_integration_profiles(),
         "apis": list_apis(include_admin=False),
