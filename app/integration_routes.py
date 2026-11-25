@@ -40,7 +40,23 @@ def _tenant(raw_key: str | None) -> dict:
 @router.get("/api/integrations")
 async def integrations_catalog():
     """List executable shared-core integration contracts without exposing secrets."""
-    return {"integrations": list_integration_profiles()}
+    dynamic = [
+        {
+            "id": item["extension_id"],
+            "name": item["name"],
+            "version": item["version"],
+            "status": item["status"],
+            "domains": item["domains"],
+            "capabilities": item["capabilities"],
+            "execution": "shared-general-research",
+            "api": f"POST /api/integrations/{item['extension_id']}/research",
+        }
+        for item in list_extensions(kind="connector")
+        if item.get("status") == "active"
+        and "general" in item.get("domains", [])
+        and "research.workflow.v1" in item.get("capabilities", [])
+    ]
+    return {"integrations": list_integration_profiles(), "registered_connectors": dynamic}
 
 
 @router.post("/api/integrations/{domain}/research", status_code=202)
