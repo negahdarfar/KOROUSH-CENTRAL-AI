@@ -14,6 +14,7 @@ DOMAIN_LABELS = {
     "youtube": ["emerging-topic", "evergreen", "copyright-risk", "insufficient-trend-evidence"],
     "ptc": ["potentially-legitimate", "high-risk", "unverified", "insufficient-evidence"],
     "nft": ["metadata-incomplete", "market-evidence-needed", "risk-flagged", "potentially-notable"],
+    "general": ["supported", "partially-supported", "needs-verification", "insufficient-evidence"],
 }
 MAX_WORKFLOW_STEPS = 4
 
