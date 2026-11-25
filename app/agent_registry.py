@@ -207,6 +207,7 @@ _API_CATALOG = (
     {"id": "github.repair.proposal", "method": "POST", "path": "/api/fix-proposal/{owner}/{repo}", "auth": "admin", "status": "available"},
     {"id": "github.repair.preview", "method": "POST", "path": "/api/fix-preview/{owner}/{repo}", "auth": "admin", "status": "available"},
     {"id": "github.repair.apply", "method": "POST", "path": "/api/fix-apply/{owner}/{repo}", "auth": "admin+explicit-confirmation", "status": "available"},
+    {"id": "models.performance", "method": "GET", "path": "/api/models/performance", "auth": "admin", "status": "available", "data": "observed-runtime-aggregates"},
     {"id": "usage.summary", "method": "GET", "path": "/api/usage", "auth": "admin", "status": "available"},
     {"id": "usage.alerts", "method": "GET", "path": "/api/usage/alerts", "auth": "admin", "status": "available"},
     {"id": "operations.ready", "method": "GET", "path": "/readyz", "auth": "public-health", "status": "available"},
