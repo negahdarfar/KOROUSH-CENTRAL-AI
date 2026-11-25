@@ -139,3 +139,48 @@ def test_unregistered_future_connector_is_rejected(monkeypatch):
         assert exc.status_code == 404
     else:
         raise AssertionError("unregistered integration must be rejected")
+
+
+
+def test_domain_research_requires_result_read_scope_before_enqueue(monkeypatch):
+    import asyncio
+    from fastapi import HTTPException
+    from app import integration_routes as routes
+
+    monkeypatch.setattr(routes, "authenticate_tenant_key", lambda key: {
+        "key_id": "00000000-0000-0000-0000-000000000003",
+        "team_id": "team-a",
+        "user_id": "user-a",
+        "repositories": ["org/forex"],
+        "scopes": ["jobs:enqueue", "inference:chat"],
+    })
+    monkeypatch.setattr(routes, "worker_ready", lambda: True)
+    request = routes.DomainResearchRequest(
+        repository="org/forex",
+        idempotency_key="fx-no-read-scope",
+        evidence=[{
+            "source_id": "source-1",
+            "publisher": "Example",
+            "source_url": "https://example.com/report",
+            "observed_at": "2026-11-25T00:00:00Z",
+            "text": "A bounded evidence excerpt.",
+        }],
+    )
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(routes.submit_domain_research("forex", request, x_tenant_key="kor_test"))
+    assert exc.value.status_code == 403
+    assert "jobs:read" in exc.value.detail
+
+
+def test_public_integrations_catalog_does_not_disclose_registered_connectors(monkeypatch):
+    import asyncio
+    from app import integration_routes as routes
+
+    def forbidden_global_listing(**kwargs):
+        raise AssertionError("global connector enumeration must not be used")
+
+    monkeypatch.setattr(routes, "list_extensions", forbidden_global_listing)
+    result = asyncio.run(routes.integrations_catalog())
+    assert "integrations" in result
+    assert "registered_connectors" not in result
+    assert result["dynamic_discovery"].startswith("/api/extensions?")
