@@ -81,13 +81,20 @@ async def execute_domain_workflow(
     base = {key: value for key, value in job.items() if key != "payload"}
     steps: list[dict] = []
 
+    # The outer workflow stores provenance-enriched evidence. The specialist
+    # agent contract accepts only caller-owned source fields and recomputes
+    # provenance itself; do not leak derived fields into its strict input.
+    research_evidence = [
+        {key: item[key] for key in ("source_id", "text", "publisher", "source_url", "observed_at") if key in item}
+        for item in payload["evidence"]
+    ]
     research = await agent_handler({
         **base,
         "payload": {
             "agent_id": "koroush.research-brief",
             "schema_version": 1,
             "domain": domain,
-            "evidence": payload["evidence"],
+            "evidence": research_evidence,
         },
     })
     research_text = _content(research, "research")
