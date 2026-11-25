@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from .agent_workflows import AgentWorkflowInputError, validate_domain_workflow_input
 from .durable_jobs import IdempotencyConflict, JobQueueError, enqueue_tenant_job
 from .integration_profiles import get_integration_profile, list_integration_profiles
+from .extension_registry import list_extensions
 from .job_payload_store import JobPayloadError, delete_payload, put_payload
 from .tenant_auth import authenticate_tenant_key
 from .worker_runtime import worker_ready
@@ -49,12 +50,36 @@ async def submit_domain_research(
     x_tenant_key: str | None = Header(default=None),
 ):
     identity = _tenant(x_tenant_key)
-    profile = get_integration_profile(f"koroush.{domain}")
-    if not profile or profile.get("execution") != "durable-job":
-        raise HTTPException(status_code=404, detail="Domain integration not found")
     repository = request.repository.strip().lower()
     if repository not in [str(item).lower() for item in identity.get("repositories", [])]:
         raise HTTPException(status_code=403, detail="Repository is not assigned to this tenant")
+
+    # Built-in adapters are stable aliases. Future repositories can use the
+    # same endpoint by registering an approved connector manifest; no new route
+    # or central code change is needed for another general research consumer.
+    profile = get_integration_profile(f"koroush.{domain}")
+    if profile and profile.get("execution") == "durable-job":
+        workflow_domain = domain
+        workflow_id = f"koroush.{domain}.research.v1"
+        integration_id = f"koroush.{domain}"
+    else:
+        try:
+            registered = list_extensions(repository=repository, kind="connector")
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Integration registry is unavailable") from exc
+        extension = next((
+            item for item in registered
+            if item.get("extension_id") == domain
+            and item.get("status") == "active"
+            and "general" in item.get("domains", [])
+            and "research.workflow.v1" in item.get("capabilities", [])
+            and repository in [str(value).lower() for value in item.get("repositories", [])]
+        ), None)
+        if not extension:
+            raise HTTPException(status_code=404, detail="Registered research integration not found")
+        workflow_domain = "general"
+        integration_id = extension["extension_id"]
+        workflow_id = f"{integration_id}@{extension['version']}.research.v1"
     scopes = set(identity.get("scopes", []))
     if not {"jobs:enqueue", "inference:chat"}.issubset(scopes):
         raise HTTPException(status_code=403, detail="Tenant key lacks jobs:enqueue or inference:chat scope")
