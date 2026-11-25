@@ -124,6 +124,41 @@ class CentralAIClient:
             },
         )
 
+    async def submit_domain_research(
+        self,
+        *,
+        domain: str,
+        evidence: list[dict[str, Any]],
+        idempotency_key: str,
+        target_language: str | None = None,
+        max_attempts: int = 3,
+    ) -> dict:
+        """Submit one of the four fixed domain workflows to the shared queue."""
+        if domain not in {"forex", "youtube", "ptc", "nft"}:
+            raise ValueError("domain must be forex, youtube, ptc or nft")
+        if not isinstance(evidence, list) or not 1 <= len(evidence) <= 8:
+            raise ValueError("evidence must contain 1 to 8 source objects")
+        if any(not isinstance(item, dict) for item in evidence):
+            raise ValueError("each evidence item must be an object")
+        if not isinstance(idempotency_key, str) or not 1 <= len(idempotency_key) <= 128:
+            raise ValueError("idempotency_key must contain 1 to 128 characters")
+        if target_language is not None and (
+            not isinstance(target_language, str) or not target_language.strip() or len(target_language) > 80
+        ):
+            raise ValueError("target_language must be non-empty text up to 80 characters")
+        if isinstance(max_attempts, bool) or not isinstance(max_attempts, int) or not 1 <= max_attempts <= 10:
+            raise ValueError("max_attempts must be an integer from 1 to 10")
+        return await self._request(
+            "POST", f"/api/integrations/{domain}/research",
+            json={
+                "repository": self.repository,
+                "evidence": evidence,
+                "idempotency_key": idempotency_key,
+                "target_language": target_language,
+                "max_attempts": max_attempts,
+            },
+        )
+
     async def submit_agent(
         self,
         *,
