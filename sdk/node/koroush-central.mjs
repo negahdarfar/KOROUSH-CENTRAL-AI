@@ -81,6 +81,7 @@ export class CentralAIClient {
   }
 
   manifest() { return this.request("GET", "/api/platform/manifest"); }
+  syncCapabilities() { return this.request("GET", "/api/repositories/sync", { query: { repository: this.repository } }); }
   agents() { return this.request("GET", "/api/agents", { query: { repository: this.repository } }); }
   apis() { return this.request("GET", "/api/apis", { query: { repository: this.repository } }); }
 
