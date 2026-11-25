@@ -26,7 +26,10 @@ class AgentWorkflowInputError(ValueError):
 def validate_domain_workflow_input(payload: Any) -> dict:
     if not isinstance(payload, dict):
         raise AgentWorkflowInputError("workflow payload must be an object")
-    if set(payload) - {"domain", "evidence", "target_language"}:
+    # Previously queued normalized payloads include these exact internal markers.
+    if payload.get("agent_id", "koroush.research-brief") != "koroush.research-brief" or type(payload.get("schema_version", 1)) is not int or payload.get("schema_version", 1) != 1:
+        raise AgentWorkflowInputError("unsupported workflow contract")
+    if set(payload) - {"domain", "evidence", "target_language", "agent_id", "schema_version"}:
         raise AgentWorkflowInputError("workflow payload contains unsupported fields")
     domain = payload.get("domain")
     if not isinstance(domain, str) or domain not in DOMAIN_LABELS:
