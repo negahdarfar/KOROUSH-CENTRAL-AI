@@ -184,6 +184,20 @@ def complete_reservation(reservation_id: str, actual_tokens: int) -> None:
         conn.close()
 
 
+def reconcile_attempt_tokens(reservation_id: str, actual_tokens: int) -> None:
+    """Increase a conservatively committed attempt when reported usage is higher."""
+    if isinstance(actual_tokens, bool) or not isinstance(actual_tokens, int) or actual_tokens <= 0:
+        return
+    conn = _connect()
+    try:
+        conn.execute(
+            "UPDATE quota_reservations SET actual_tokens=MAX(actual_tokens,?) WHERE id=? AND status='complete'",
+            (actual_tokens, reservation_id),
+        )
+    finally:
+        conn.close()
+
+
 def cancel_reservation(reservation_id: str) -> None:
     conn = _connect()
     try:
