@@ -111,3 +111,26 @@ def test_generic_research_domain_runs_for_future_repository_types():
     assert result["domain"] == "general"
     assert result["step_count"] == 3
     assert result["report"] == "General evidence-based output."
+
+
+def test_workflow_revalidates_each_stage_against_strict_agent_contracts():
+    from app.agent_contracts import validate_agent_input
+
+    calls = []
+
+    async def strict_agent(job):
+        agent_id, normalized = validate_agent_input(job["payload"])
+        calls.append(agent_id)
+        text = "Strictly validated stage output."
+        return {"output": {"choices": [{"message": {"content": text}}]}}
+
+    result = asyncio.run(execute_domain_workflow({
+        "repository": "owner/repo",
+        "payload": {"domain": "general", "evidence": _evidence()},
+    }, strict_agent))
+    assert calls == [
+        "koroush.research-brief",
+        "koroush.text-classifier",
+        "koroush.text-summarizer",
+    ]
+    assert result["status"] == "succeeded"
