@@ -21,7 +21,7 @@ MAX_RESEARCH_ITEMS = 8
 MAX_RESEARCH_ITEM_CHARS = 5_000
 MAX_RESEARCH_TOTAL_CHARS = 20_000
 MAX_RESEARCH_TOTAL_BYTES = 48 * 1024
-RESEARCH_DOMAINS = {"forex", "youtube", "ptc", "nft"}
+RESEARCH_DOMAINS = {"forex", "youtube", "ptc", "nft", "general"}
 
 AGENT_CONTRACTS: dict[str, dict[str, Any]] = {
     "koroush.text-summarizer": {
@@ -86,7 +86,7 @@ def validate_agent_input(payload: Any) -> tuple[str, dict[str, Any]]:
         domain = payload.get("domain")
         evidence = payload.get("evidence")
         if not isinstance(domain, str) or domain not in RESEARCH_DOMAINS:
-            raise AgentContractError("domain must be one of forex, youtube, ptc, nft")
+            raise AgentContractError("domain must be one of forex, youtube, ptc, nft or general")
         if not isinstance(evidence, list) or not 1 <= len(evidence) <= MAX_RESEARCH_ITEMS:
             raise AgentContractError("evidence must contain 1–8 source items")
         clean_evidence = []
