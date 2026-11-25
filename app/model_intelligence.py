@@ -17,17 +17,36 @@ _HINTS = {
 }
 
 
-def _numeric_values(value):
-    if isinstance(value, dict):
-        for nested in value.values():
-            yield from _numeric_values(nested)
-    elif isinstance(value, (int, float)) and not isinstance(value, bool):
-        yield float(value)
-    elif isinstance(value, str):
+def classify_chat_price(pricing):
+    """Fail closed for incomplete or ambiguous token pricing.
+
+    Recognize the two flat schemas used by the existing catalog contracts.
+    A zero value for only one side is insufficient. Extra fields must also
+    be explicit finite zero prices; unfamiliar metadata is not evidence.
+    """
+    from decimal import Decimal, InvalidOperation
+    if not isinstance(pricing, dict) or not pricing:
+        return "unknown"
+    values = {}
+    invalid = False
+    for key, value in pricing.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+            invalid = True
+            continue
         try:
-            yield float(value)
-        except ValueError:
-            return
+            number = Decimal(str(value))
+        except (InvalidOperation, ValueError):
+            invalid = True
+            continue
+        if not number.is_finite() or number < 0:
+            invalid = True
+            continue
+        values[key] = number
+    if any(value > 0 for value in values.values()):
+        return "paid"
+    if invalid or not ({"input", "output"} <= values.keys() or {"prompt", "completion"} <= values.keys()):
+        return "unknown"
+    return "free"
 
 
 def classify_model(model: dict) -> dict:
@@ -66,14 +85,8 @@ def classify_model(model: dict) -> dict:
             categories.append(category)
             evidence[category] = "model_id_hint"
 
-    pricing = model.get("pricing")
-    values = list(_numeric_values(pricing)) if pricing is not None else []
-    if values and all(value == 0 for value in values):
-        pricing_status = "free_pricing_reported"
-    elif any(value > 0 for value in values):
-        pricing_status = "paid_pricing_reported"
-    else:
-        pricing_status = "unknown"
+    price_class = classify_chat_price(model.get("pricing"))
+    pricing_status = {"free": "free_pricing_reported", "paid": "paid_pricing_reported", "unknown": "unknown"}[price_class]
 
     return {
         "id": model_id,
